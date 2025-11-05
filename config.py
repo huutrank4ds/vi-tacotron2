@@ -7,11 +7,13 @@ class Hparams:
     fp16_run: bool = False
     n_mel_channels: int = 80
     n_frames_per_step: int = 1 # Rất quan trọng cho Decoder
+    stop_pad_value: float = 1.0
     
     # Text
     n_symbols: int = 67 # Phải khớp với len(symbols)
     symbols: str = ' abcdefghijklmnopqrstuvwxyzáàảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ.,!?'
     symbols_embedding_dim: int = 512
+    text_pad_value: int = 0
     
     # Audio
     target_sr: int = 22050
@@ -20,35 +22,40 @@ class Hparams:
     win_length: int = 1024
     f_min: float = 0.0
     f_max: float = 8000.0
+    mel_pad_value: float = -11.5129  # log(1e-5)
 
     # --- Các tham số BẮT BUỘC cho Encoder/Decoder/Postnet ---
     # (Đây là các giá trị chuẩn của Tacotron 2)
-    
-    # Encoder
-    encoder_kernel_size: int = 5
+        
+    # --- Encoder ---
     encoder_n_convolutions: int = 3
+    encoder_kernel_size: int = 5
     encoder_embedding_dim: int = 512
-    
-    # Decoder
+
+    # --- Prenet ---
+    prenet_dim: int = 256
+
+    # --- Attention ---
     attention_rnn_dim: int = 1024
-    decoder_rnn_dim: int = 1024
-    max_decoder_steps: int = 1000 # Giới hạn khi inference
-    gate_threshold: float = 0.5 # Ngưỡng dừng
-    p_attention_dropout: float = 0.1
-    p_decoder_dropout: float = 0.1
-    
-    # Attention
     attention_dim: int = 128
     attention_location_n_filters: int = 32
     attention_location_kernel_size: int = 31
-    
-    # Postnet
-    postnet_embedding_dim: int = 512
-    postnet_kernel_size: int = 5
+
+    # --- Decoder ---
+    decoder_rnn_dim: int = 1024
+    max_decoder_steps: int = 1000
+    gate_threshold: float = 0.5
+    p_attention_dropout: float = 0.1
+    p_decoder_dropout: float = 0.1
+
+    # --- Postnet ---
     postnet_n_convolutions: int = 5
-    
+    postnet_kernel_size: int = 5
+    postnet_embedding_dim: int = 512
+
     # --- Cấu hình Training ---
     learning_rate: float = 1e-3
     weight_decay: float = 1e-6
     batch_size: int = 32
-    num_workers: int = 4
+    num_workers: int = 1
+    epochs: int = 500

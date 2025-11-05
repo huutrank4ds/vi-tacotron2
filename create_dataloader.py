@@ -2,7 +2,7 @@ import os
 import torch
 from torch.utils.data import DataLoader
 from datasets import load_dataset
-from processing import preprocess_function
+from processing import preprocess_function, tacotron2_collate
 
 DATASET_NAME = "thivux/phoaudiobook" 
 DATASET_CONFIG = None
@@ -34,7 +34,8 @@ def create_dataloader(rank, world_size, batch_size_per_gpu, num_workers_per_gpu)
         processed_ds,
         batch_size=batch_size_per_gpu,
         num_workers=num_workers_per_gpu,
-        pin_memory=True
+        pin_memory=True,
+        collate_fn=tacotron2_collate
     )
     
     print(f"[Rank {rank}] Đã tạo DataLoader thành công.")

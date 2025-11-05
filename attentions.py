@@ -3,7 +3,6 @@ import torch.nn.functional as F
 from layers import LinearNorm, ConvNorm
 import torch
 
-
 class LocationLayer(nn.Module):
     def __init__(self, attention_n_filters, attention_kernel_size,
                  attention_dim):
