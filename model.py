@@ -12,7 +12,7 @@ class Tacotron2(nn.Module):
         super(Tacotron2, self).__init__()
         self.mask_padding = hparams.mask_padding
         self.fp16_run = hparams.fp16_run
-        self.n_mel_channels = hparams.n_mel_channels
+        self.n_mel_channels = hparams.n_mels
         self.n_frames_per_step = hparams.n_frames_per_step
         self.embedding = nn.Embedding(
             hparams.n_symbols, hparams.symbols_embedding_dim)
