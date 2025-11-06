@@ -3,7 +3,7 @@ import os
 from config import Hparams
 from torch.optim import AdamW
 import torch.distributed as dist
-from dataloader import create_dataloader 
+from dataloader import get_trainloader_valset
 from model import Tacotron2
 from loss import Tacotron2Loss
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -39,9 +39,9 @@ def train_worker(rank, world_size, hparams: Hparams):
     if hparams.ddp_run:
         init_distributed_training(device_id, world_size, hparams)
 
-    # Giả sử create_dataloader trả về loader dùng TextMelCollate
-    train_loader, val_set = create_dataloader(
-        rank, 
+    # Giả sử get_trainloader_valset trả về loader dùng TextMelCollate
+    train_loader, val_set = get_trainloader_valset(
+        device_id, 
         world_size, 
         hparams.batch_size, 
         hparams.num_workers
