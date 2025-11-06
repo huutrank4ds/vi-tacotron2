@@ -43,7 +43,7 @@ def train_worker(rank, world_size, hparams: Hparams):
     train_loader, val_set = get_trainloader_valset(
         device_id, 
         world_size, 
-        hparams.batch_size
+        hparams
     )
 
     # Load model bên trong hàm worker
