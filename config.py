@@ -2,12 +2,23 @@ from dataclasses import dataclass
 
 @dataclass
 class Hparams:
-    # --- Các tham số từ class của bạn ---
+    # --- Tham số cho dataset ---
+    dataset_name: str = "thivux/phoaudiobook"
+    dataset_config: str = None
+    seed: int = 42
+    shuffle: bool = True
+    shuffle_buffer_size: int = 10_000
+
+    # --- Tham số cho DDP ---
+    ddp_run: bool = True
+    ddp_backend: str = 'nccl'  # Hoặc 'gloo' tùy vào môi trường của bạn
+    ddp_url: str = 'tcp://localhost:12355'
+
+    # --- Các tham số khác ---
     mask_padding: bool = True
     fp16_run: bool = False
-    n_mel_channels: int = 80
     n_frames_per_step: int = 1 # Rất quan trọng cho Decoder
-    stop_pad_value: float = 1.0
+    
     
     # Text
     n_symbols: int = 67 # Phải khớp với len(symbols)
@@ -23,6 +34,8 @@ class Hparams:
     f_min: float = 0.0
     f_max: float = 8000.0
     mel_pad_value: float = -11.5129  # log(1e-5)
+    n_mels: int = 80
+    stop_pad_value: float = 1.0
 
     # --- Các tham số BẮT BUỘC cho Encoder/Decoder/Postnet ---
     # (Đây là các giá trị chuẩn của Tacotron 2)
@@ -57,5 +70,4 @@ class Hparams:
     learning_rate: float = 1e-3
     weight_decay: float = 1e-6
     batch_size: int = 32
-    num_workers: int = 1
     epochs: int = 500
