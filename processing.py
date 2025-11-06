@@ -161,8 +161,9 @@ class CollateTextMel:
         Xử lý một batch (list các dict) khi được gọi.
         
         Input: `batch` là một list các dict, 
-               ví dụ: [{'text_inputs': [1,2,3], 'mel_targets': tensor_A, ...}, 
-                       {'text_inputs': [4,5], 'mel_targets': tensor_B, ...}]
+                mỗi dict có các keys: 
+                'text_inputs', 'text_lengths', 
+                'mel_targets', 'mel_lengths', 'stop_tokens'.
         """
         
         # --- 1. Đệm (Pad) Text Inputs ---

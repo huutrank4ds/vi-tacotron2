@@ -24,8 +24,15 @@ class Tacotron2(nn.Module):
         self.postnet = Postnet(hparams)
 
     def parse_batch(self, batch):
-        text_padded, input_lengths, mel_padded, gate_padded, \
-            output_lengths = batch
+        # text_padded, input_lengths, mel_padded, gate_padded, \
+        #     output_lengths = batch
+        
+        text_padded = batch['text_inputs']
+        input_lengths = batch['text_lengths']
+        mel_padded = batch['mel_targets']
+        gate_padded = batch['stop_tokens']
+        output_lengths = batch['mel_lengths']
+
         text_padded = to_gpu(text_padded).long()
         input_lengths = to_gpu(input_lengths).long()
         max_len = torch.max(input_lengths.data).item()

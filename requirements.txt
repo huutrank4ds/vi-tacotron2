@@ -1,0 +1,3 @@
+datasets=3.6.0
+pytorch=2.6.0+cu124
+torchaudio=2.6.0+cu124

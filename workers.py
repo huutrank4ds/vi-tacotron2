@@ -1,5 +1,4 @@
 import torch
-import os
 from config import Hparams
 from torch.optim import AdamW
 import torch.distributed as dist
