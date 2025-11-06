@@ -34,7 +34,7 @@ class PrepareTextMel:
             n_fft=hparams.n_fft,
             win_length=hparams.win_length,
             hop_length=hparams.hop_length,
-            n_mels=hparams.n_mels,
+            n_mels=hparams.n_mel_channels,
             f_min=hparams.f_min,
             f_max=hparams.f_max,
             power=1.0, 
