@@ -41,8 +41,8 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
     new_features = Features({
         'text_inputs': Sequence(Value('int64')),
         'text_lengths': Value('int64'),
-        # Giả sử hparams.n_mels là 80
-        'mel_targets': Array2D(shape=(None, hparams.n_mels), dtype='float32'),
+        # Giả sử hparams.n_mel_channels là 80
+        'mel_targets': Array2D(shape=(None, hparams.n_mel_channels), dtype='float32'),
         'mel_lengths': Value('int64'),
         'stop_tokens': Sequence(Value('float32'))
     })
