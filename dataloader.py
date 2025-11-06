@@ -65,26 +65,26 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
     
     # --- 2. XỬ LÝ VALIDATION (Chỉ Rank 0) ---
     valset = None
-    if rank == 0:
-        print("[Rank 0] Đang tải và xử lý validation set...")
-        valset = load_dataset(
-            DATASET_NAME, 
-            DATASET_CONFIG, 
-            split='validation', 
-            streaming=False, # Tải 1 lần
-            trust_remote_code=True # An toàn hơn nên thêm
-        )
+    # if rank == 0:
+    #     print("[Rank 0] Đang tải và xử lý validation set...")
+    #     valset = load_dataset(
+    #         DATASET_NAME, 
+    #         DATASET_CONFIG, 
+    #         split='validation', 
+    #         streaming=False, # Tải 1 lần
+    #         trust_remote_code=True # An toàn hơn nên thêm
+    #     )
 
-        valset = valset.map(
-            prepare_text_mel,
-            batched=True,
-            batch_size=1000,
-            # Có thể dùng nhiều worker vì không streaming
-            num_proc=hparams.num_workers, 
-            remove_columns=valset.column_names, # <-- SỬA: Xóa cột cũ
-            features=new_features                 # <-- SỬA: Cung cấp schema mới
-        )
-        print(f"[Rank 0] Đã tạo tập Validation thành công.")
+    #     valset = valset.map(
+    #         prepare_text_mel,
+    #         batched=True,
+    #         batch_size=1000,
+    #         # Có thể dùng nhiều worker vì không streaming
+    #         num_proc=hparams.num_workers, 
+    #         remove_columns=valset.column_names, # <-- SỬA: Xóa cột cũ
+    #         features=new_features                 # <-- SỬA: Cung cấp schema mới
+    #     )
+    #     print(f"[Rank 0] Đã tạo tập Validation thành công.")
 
     print(f"[Rank {rank}] Đã tạo DataLoader thành công.")
     return trainloader, valset
