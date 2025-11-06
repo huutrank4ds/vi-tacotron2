@@ -25,13 +25,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
         DATASET_NAME, 
         DATASET_CONFIG, 
         split='train', 
-        streaming=True,
-        trust_remote_code=True # An toàn hơn nên thêm
-    )
-    
-    iterable_train_ds = iterable_train_ds.cast_column(
-        "audio", 
-        Audio(sampling_rate=hparams.target_sr, decode=True)
+        streaming=True
     )
 
     if hparams.shuffle:
@@ -40,29 +34,17 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
     else:
         sharded_ds = iterable_train_ds.shard(num_shards=world_size, index=rank)
 
-    # === SỬA LỖI: Định nghĩa schema đầu ra rõ ràng ===
-    new_features = Features({
-        'text_inputs': Sequence(Value('int64')),
-        'text_lengths': Value('int64'),
-        # Giả sử hparams.n_mel_channels là 80
-        'mel_targets': Array2D(shape=(None, hparams.n_mel_channels), dtype='float32'),
-        'mel_lengths': Value('int64'),
-        'stop_tokens': Sequence(Value('float32'))
-    })
-
     processed_ds = sharded_ds.map(
         prepare_text_mel,
         batched=True,
-        batch_size=1000,
-        remove_columns=sharded_ds.column_names, # <-- SỬA: Xóa cột cũ
-        features=new_features                  # <-- SỬA: Cung cấp schema mới
+        batch_size=1000
     )
     
     trainloader = DataLoader(
         processed_ds,
         batch_size=hparams.batch_size,
         num_workers=0, # Chính xác, phải là 0 cho streaming
-        pin_memory=True,
+        pin_memory=True,    
         collate_fn=collate_fn
     )
     
