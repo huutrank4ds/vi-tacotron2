@@ -44,7 +44,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
         processed_ds,
         batch_size=hparams.batch_size,
         num_workers=0, # Chính xác, phải là 0 cho streaming
-        pin_memory=True,    
+        pin_memory=False,    
         collate_fn=collate_fn
     )
     
