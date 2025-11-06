@@ -21,7 +21,7 @@ class Hparams:
     
     
     # Text
-    n_symbols: int = 67 # Phải khớp với len(symbols)
+    n_symbols: int = 98 # Phải khớp với len(symbols)
     symbols: str = ' abcdefghijklmnopqrstuvwxyzáàảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ.,!?'
     symbols_embedding_dim: int = 512
     text_pad_value: int = 0
