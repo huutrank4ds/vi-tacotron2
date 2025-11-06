@@ -18,6 +18,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
         split='train', 
         streaming=True
     )
+    iterable_train_ds = iterable_train_ds.cast_column("audio", None)
 
     # Xáo trộn trước khi chia các batch nhỏ (có thể tái tạo kết quả)
     if hparams.shuffle:
