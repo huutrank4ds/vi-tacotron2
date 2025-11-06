@@ -34,7 +34,7 @@ class Hparams:
     f_min: float = 0.0
     f_max: float = 8000.0
     mel_pad_value: float = -11.5129  # log(1e-5)
-    n_mels: int = 80
+    n_mel_channels: int = 80
     stop_pad_value: float = 1.0
 
     # --- Các tham số BẮT BUỘC cho Encoder/Decoder/Postnet ---
