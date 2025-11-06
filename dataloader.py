@@ -15,7 +15,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
     # --- 0. Khởi tạo processors ---
     # Sử dụng đối tượng hparams được truyền vào hàm
     prepare_text_mel = PrepareTextMel(hparams)
-    collate_fn = CollateTextMel() # Giả định CollateTextMel không cần hparams
+    collate_fn = CollateTextMel(hparams)
 
     DATASET_NAME = hparams.dataset_name
     DATASET_CONFIG = hparams.dataset_config
