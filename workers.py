@@ -87,32 +87,32 @@ def train_worker(rank, world_size, hparams: Hparams):
             
             if rank == 0 and step % 50 == 0:
                 print(f"Epoch: {epoch}, Step: {step}, Loss: {loss.item()}")
-                print(f"    Mel: {loss_mel.item()}, Postnet: {loss_mel_postnet.item()}, Gate: {loss_gate.item()}")
+                print(f"Mel: {loss_mel.item()}, Postnet: {loss_mel_postnet.item()}, Gate: {loss_gate.item()}")
             
             if step == 200:
                 print(f"[Rank {rank}] Đã hoàn thành 200 bước.")
                 break
-        if device_id == 0:
-            # Thực hiện đánh giá trên tập validation
-            model.eval()
-            best_val_loss = float('inf')
-            total_val_loss = 0.0
-            with torch.no_grad():
-                for batch in val_set:
-                    model_inputs, ground_truth = model.module.parse_batch(batch)
-                    model_outputs = model(model_inputs)
-                    output_lengths = model_inputs[4]
-                    val_loss, _, _, _ = criterion(
-                        model_outputs, ground_truth, output_lengths
-                    )
-                    total_val_loss += val_loss
-            avg_val_loss = total_val_loss / len(val_set)
-            print(f"[Rank {rank}] Epoch {epoch} Validation Loss: {avg_val_loss.item()}")
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                save_checkpoint(model, optimizer, epoch, step, f"checkpoint_epoch_{epoch}.pt")
-        if hparams.ddp_run:
-            dist.barrier()  # Đồng bộ hóa các tiến trình sau mỗi epoch
+        # if device_id == 0:
+        #     # Thực hiện đánh giá trên tập validation
+        #     model.eval()
+        #     best_val_loss = float('inf')
+        #     total_val_loss = 0.0
+        #     with torch.no_grad():
+        #         for batch in val_set:
+        #             model_inputs, ground_truth = model.module.parse_batch(batch)
+        #             model_outputs = model(model_inputs)
+        #             output_lengths = model_inputs[4]
+        #             val_loss, _, _, _ = criterion(
+        #                 model_outputs, ground_truth, output_lengths
+        #             )
+        #             total_val_loss += val_loss
+        #     avg_val_loss = total_val_loss / len(val_set)
+        #     print(f"[Rank {rank}] Epoch {epoch} Validation Loss: {avg_val_loss.item()}")
+        #     if avg_val_loss < best_val_loss:
+        #         best_val_loss = avg_val_loss
+        #         save_checkpoint(model, optimizer, epoch, step, f"checkpoint_epoch_{epoch}.pt")
+        # if hparams.ddp_run:
+        #     dist.barrier()  # Đồng bộ hóa các tiến trình sau mỗi epoch
 
     print(f"[Rank {rank}] Huấn luyện hoàn tất.")
     dist.destroy_process_group()
