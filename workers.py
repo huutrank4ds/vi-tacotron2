@@ -84,7 +84,7 @@ def train_worker(rank, world_size, hparams: Hparams):
             loss.backward()
             optimizer.step()
             
-            if rank == 0 and step % 50 == 0:
+            if rank == 0 and step % 1 == 0:
                 print(f"Epoch: {epoch}, Step: {step}, Loss: {loss.item()}")
                 print(f"Mel: {loss_mel.item()}, Postnet: {loss_mel_postnet.item()}, Gate: {loss_gate.item()}")
             

@@ -69,5 +69,5 @@ class Hparams:
     # --- Cấu hình Training ---
     learning_rate: float = 1e-3
     weight_decay: float = 1e-6
-    batch_size: int = 32
+    batch_size: int = 8
     epochs: int = 500
