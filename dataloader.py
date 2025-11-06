@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 # Import thêm Features và các kiểu dữ liệu từ datasets
-from datasets import load_dataset, Features, Value, Sequence, Array2D
+from datasets import load_dataset, Features, Value, Sequence, Array2D, Audio
 from processing import PrepareTextMel, CollateTextMel
 from config import Hparams
 
@@ -29,7 +29,10 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
         trust_remote_code=True # An toàn hơn nên thêm
     )
     
-    # Xóa dòng .cast_column("audio", None) - chúng ta sẽ dùng remove_columns
+    iterable_train_ds = iterable_train_ds.cast_column(
+        "audio", 
+        Audio(sampling_rate=hparams.target_sr, decode=True)
+    )
 
     if hparams.shuffle:
         shuffled_ds = iterable_train_ds.shuffle(seed=hparams.seed, buffer_size=hparams.shuffle_buffer_size)
