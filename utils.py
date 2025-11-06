@@ -4,8 +4,10 @@ import torch
 
 
 def get_mask_from_lengths(lengths):
+    """Tạo mask từ lengths - an toàn với cả CPU và GPU"""
     max_len = torch.max(lengths).item()
-    ids = torch.arange(0, max_len, out=torch.cuda.LongTensor(max_len))
+    device = lengths.device
+    ids = torch.arange(0, max_len, dtype=torch.long, device=device)
     mask = (ids < lengths.unsqueeze(1)).bool()
     return mask
 

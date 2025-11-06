@@ -35,7 +35,7 @@ class Encoder(nn.Module):
         # pytorch tensor are not reversible, hence the conversion
         input_lengths = input_lengths.cpu().numpy()
         x = nn.utils.rnn.pack_padded_sequence(
-            x, input_lengths, batch_first=True)
+            x, input_lengths, batch_first=True, enforce_sorted=False)
 
         self.lstm.flatten_parameters()
         outputs, _ = self.lstm(x)
