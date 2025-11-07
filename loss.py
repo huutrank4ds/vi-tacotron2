@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from utils import get_mask_from_lengths
 
 class Tacotron2Loss(nn.Module):
     def __init__(self):
@@ -8,14 +9,7 @@ class Tacotron2Loss(nn.Module):
         self.mel_loss_fn = nn.MSELoss(reduction='none') 
         # Dùng BCEWithLogitsLoss cho gate (đầu ra là logits)
         self.gate_loss_fn = nn.BCEWithLogitsLoss(reduction='none')
-
-    def get_mask_from_lengths(self, lengths):
-        """Tạo mask từ lengths - an toàn với cả CPU và GPU"""
-        max_len = torch.max(lengths).item()
-        device = lengths.device
-        ids = torch.arange(0, max_len, dtype=torch.long, device=device)
-        mask = (ids < lengths.unsqueeze(1)).bool()
-        return mask
+        self.get_mask_from_lengths = get_mask_from_lengths
 
     def forward(self, model_outputs, ground_truth, output_lengths):
         """
