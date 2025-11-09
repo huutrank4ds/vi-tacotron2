@@ -58,7 +58,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
             valset = load_dataset(
                 DATASET_NAME, 
                 DATASET_CONFIG, 
-                split='validation', 
+                split='validation[:5%]', 
                 streaming=False
             )
 
