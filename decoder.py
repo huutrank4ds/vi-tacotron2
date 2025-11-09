@@ -57,8 +57,8 @@ class Decoder(nn.Module):
         decoder_input: all zeros frames
         """
         B = memory.size(0)
-        decoder_input = Variable(memory.data.new(
-            B, self.n_mel_channels * self.n_frames_per_step).zero_())
+        decoder_input = memory.new_zeros(B,
+                                     self.n_mel_channels * self.n_frames_per_step)
         return decoder_input
 
     def initialize_decoder_states(self, memory, mask):
@@ -73,22 +73,15 @@ class Decoder(nn.Module):
         B = memory.size(0)
         MAX_TIME = memory.size(1)
 
-        self.attention_hidden = Variable(memory.data.new(
-            B, self.attention_rnn_dim).zero_())
-        self.attention_cell = Variable(memory.data.new(
-            B, self.attention_rnn_dim).zero_())
+        self.attention_hidden = memory.new_zeros(B, self.attention_rnn_dim)
+        self.attention_cell = memory.new_zeros(B, self.attention_rnn_dim)
 
-        self.decoder_hidden = Variable(memory.data.new(
-            B, self.decoder_rnn_dim).zero_())
-        self.decoder_cell = Variable(memory.data.new(
-            B, self.decoder_rnn_dim).zero_())
+        self.decoder_hidden = memory.new_zeros(B, self.decoder_rnn_dim)
+        self.decoder_cell = memory.new_zeros(B, self.decoder_rnn_dim)
 
-        self.attention_weights = Variable(memory.data.new(
-            B, MAX_TIME).zero_())
-        self.attention_weights_cum = Variable(memory.data.new(
-            B, MAX_TIME).zero_())
-        self.attention_context = Variable(memory.data.new(
-            B, self.encoder_embedding_dim).zero_())
+        self.attention_weights = memory.new_zeros(B, MAX_TIME)
+        self.attention_weights_cum = memory.new_zeros(B, MAX_TIME)
+        self.attention_context = memory.new_zeros(B, self.encoder_embedding_dim)
 
         self.memory = memory
         self.processed_memory = self.attention_layer.memory_layer(memory)
