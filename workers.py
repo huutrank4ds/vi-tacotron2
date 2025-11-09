@@ -69,15 +69,11 @@ def train_worker(rank, world_size, hparams: Hparams):
             # Forward pass
             # model_inputs là tuple: (text_padded, input_lengths, ...)
             model_outputs = model(model_inputs)
-            
-            # Tính loss bằng criterion (Hàm loss riêng)
-            # model_outputs là list: [mel_out, mel_post_out, gate_out, ...]
-            # ground_truth là tuple: (mel_padded, gate_padded)
-            # Chúng ta cũng cần output_lengths để masking
-            output_lengths = model_inputs[4] # Lấy output_lengths từ inputs
+
+            output_length = model_inputs[3]  # output_lengths
 
             loss, loss_mel, loss_mel_postnet, loss_gate = criterion(
-                model_outputs, ground_truth, output_lengths
+                model_outputs, ground_truth, output_length
             )
             
             # Backward và Optimize
