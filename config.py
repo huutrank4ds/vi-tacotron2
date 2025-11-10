@@ -1,13 +1,15 @@
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class Hparams:
     # --- Tham số cho dataset ---
     dataset_name: str = "thivux/phoaudiobook"
-    dataset_config: str = None
+    dataset_config: str = 'default'
     seed: int = 42
     shuffle: bool = True
     shuffle_buffer_size: int = 10_000
+    parquet_valid_file: Optional[str] = None  # Đường dẫn tới file validation nếu có
 
     # --- Tham số cho DDP ---
     ddp_run: bool = True
@@ -69,5 +71,5 @@ class Hparams:
     # --- Cấu hình Training ---
     learning_rate: float = 1e-3
     weight_decay: float = 1e-6
-    batch_size: int = 8
+    batch_size: int = 32
     epochs: int = 500

@@ -30,10 +30,10 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
     )
 
     if hparams.shuffle:
-        shuffled_ds = iterable_train_ds.shuffle(seed=hparams.seed, buffer_size=hparams.shuffle_buffer_size)
-        sharded_ds = shuffled_ds.shard(num_shards=world_size, index=rank)
+        shuffled_ds = iterable_train_ds.shuffle(seed=hparams.seed, buffer_size=hparams.shuffle_buffer_size) # type: ignore
+        sharded_ds = shuffled_ds.shard(num_shards=world_size, index=rank) # type: ignore
     else:
-        sharded_ds = iterable_train_ds.shard(num_shards=world_size, index=rank)
+        sharded_ds = iterable_train_ds.shard(num_shards=world_size, index=rank) # type: ignore
 
     processed_ds = sharded_ds.map(
         prepare_text_mel,
@@ -42,7 +42,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
     )
     
     trainloader = DataLoader(
-        processed_ds,
+        processed_ds, # type: ignore
         batch_size=hparams.batch_size,
         num_workers=0, # Chính xác, phải là 0 cho streaming
         pin_memory=False,    
@@ -52,28 +52,30 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
     # --- 2. XỬ LÝ VALIDATION (Chỉ Rank 0) ---
     valset = None
     if rank == 0:
-        processed_dataset_path = "./my_processed_phoaudiobook"
-        if not os.path.exists(processed_dataset_path):
-            print("[Rank 0] Đang tải và xử lý validation set...")
-            valset = load_dataset(
-                DATASET_NAME, 
-                DATASET_CONFIG, 
-                split='validation[:5%]', 
-                streaming=False
+        if hparams.parquet_valid_file is not None:
+            # Tải từ file parquet đã lưu sẵn
+            val_dict = load_dataset(
+                'parquet', 
+                data_files={"validation": hparams.parquet_valid_file},
             )
-
-            valset = valset.map(
-                prepare_text_mel,
-                batched=True,
-                batch_size=1000
-            )
-
-            valset.save_to_disk(processed_dataset_path)
-            print(f"[Rank 0] Đã lưu tập validation đã xử lý tại {processed_dataset_path}.")
+            val_ds = val_dict["validation"] # type: ignore
         else:
-            print("[Rank 0] Đang tải tập validation đã xử lý từ đĩa...")
-            valset = load_from_disk(processed_dataset_path) 
-        print(f"[Rank 0] Đã tạo tập Validation thành công.")
+            raise ValueError("Parquet valid file must be not be None for validation dataset.")
+        
+        processed_val_ds = val_ds.map( # type: ignore
+            prepare_text_mel, 
+            batched=True,
+            batch_size=1000
+        )
+        
+        valset = DataLoader(
+            processed_val_ds, # type: ignore
+            batch_size=hparams.batch_size,
+            shuffle=False,
+            num_workers=4,
+            pin_memory=True,
+            collate_fn=collate_fn
+        )
 
     print(f"[Rank {rank}] Đã tạo DataLoader thành công.")
     return trainloader, valset

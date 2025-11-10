@@ -1,3 +1,12 @@
-datasets=3.6.0
-pytorch=2.6.0+cu124
-torchaudio=2.6.0+cu124
+# 1. Chỉ định nguồn (index) bổ sung cho PyTorch
+#    Điều này là BẮT BUỘC để tìm thấy các bản build +cu124
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+# 2. Các gói PyTorch
+torch==2.6.0+cu124
+torchaudio==2.6.0+cu124
+
+# 3. Các gói khác (sẽ được tìm thấy trên PyPI mặc định)
+datasets==3.6.0
+huggingface_hub==1.0.0rc2
+dotenv

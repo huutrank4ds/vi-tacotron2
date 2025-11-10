@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from torch.autograd import Variable
 from torch.nn import functional as F
 from prenet import Prenet
 from attentions import Attention
@@ -36,7 +35,7 @@ class Decoder(nn.Module):
 
         self.decoder_rnn = nn.LSTMCell(
             hparams.attention_rnn_dim + hparams.encoder_embedding_dim,
-            hparams.decoder_rnn_dim, 1)
+            hparams.decoder_rnn_dim, bias=True)
 
         self.linear_projection = LinearNorm(
             hparams.decoder_rnn_dim + hparams.encoder_embedding_dim,
@@ -227,19 +226,24 @@ class Decoder(nn.Module):
         alignments: sequence of attention weights from the decoder
         """
         decoder_input = self.get_go_frame(memory)
-
         self.initialize_decoder_states(memory, mask=None)
-
         mel_outputs, gate_outputs, alignments = [], [], []
+
         while True:
             decoder_input = self.prenet(decoder_input)
-            mel_output, gate_output, alignment = self.decode(decoder_input)
+            
+            # --- Bọc hàm decode() trong no_grad() ---
+            with torch.no_grad():
+                mel_output, gate_output, alignment = self.decode(decoder_input)
 
             mel_outputs += [mel_output.squeeze(1)]
             gate_outputs += [gate_output]
             alignments += [alignment]
 
-            if torch.sigmoid(gate_output.data) > self.gate_threshold:
+            with torch.no_grad():
+                gate_prob = torch.sigmoid(gate_output)
+            
+            if gate_prob > self.gate_threshold:
                 break
             elif len(mel_outputs) == self.max_decoder_steps:
                 print("Warning! Reached max decoder steps")
