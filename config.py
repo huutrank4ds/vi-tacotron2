@@ -6,10 +6,10 @@ class Hparams:
     # --- Tham số cho dataset ---
     dataset_name: str = "thivux/phoaudiobook"
     dataset_config: str = 'default'
-    seed: int = 42
-    shuffle: bool = True
-    shuffle_buffer_size: int = 10_000
+    hf_parquets_folder: str = 'data'
     parquet_valid_file: Optional[str] = None  # Đường dẫn tới file validation nếu có
+    num_train_samples: int = 1043443
+
 
     # --- Tham số cho DDP ---
     ddp_run: bool = True
@@ -73,3 +73,11 @@ class Hparams:
     weight_decay: float = 1e-6
     batch_size: int = 32
     epochs: int = 500
+    checkpoint_path: str = "checkpoints/"
+    val_interval: int = 1000
+    log_interval: int = 100
+    seed: int = 42
+    shuffle: bool = True
+    shuffle_buffer_size: int = 10_000
+    max_step_training: int = 5000
+    

@@ -23,7 +23,7 @@ class Tacotron2(nn.Module):
         self.decoder = Decoder(hparams)
         self.postnet = Postnet(hparams)
 
-    def parse_batch(self, batch):
+    def parse_batch(self, batch, rank=None):
         # text_padded, input_lengths, mel_padded, gate_padded, \
         #     output_lengths = batch
         
@@ -33,12 +33,11 @@ class Tacotron2(nn.Module):
         gate_padded = batch['stop_tokens']
         output_lengths = batch['mel_lengths']
 
-        text_padded = to_gpu(text_padded).long()
-        input_lengths = to_gpu(input_lengths).long()
-        mel_padded = to_gpu(mel_padded).float()
-        gate_padded = to_gpu(gate_padded).float()
-        output_lengths = to_gpu(output_lengths).long()
-
+        text_padded = to_gpu(text_padded, rank).long()
+        input_lengths = to_gpu(input_lengths, rank).long()
+        mel_padded = to_gpu(mel_padded, rank).float()
+        gate_padded = to_gpu(gate_padded, rank).float()
+        output_lengths = to_gpu(output_lengths, rank).long()
         return (
             (text_padded, input_lengths, mel_padded, output_lengths),
             (mel_padded, gate_padded))

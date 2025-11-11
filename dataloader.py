@@ -1,10 +1,40 @@
-import torch
-import os
 from torch.utils.data import DataLoader
-# Import thêm Features và các kiểu dữ liệu từ datasets
-from datasets import load_dataset, load_from_disk
+from datasets import load_dataset
 from processing import PrepareTextMel, CollateTextMel
 from config import Hparams
+from huggingface_hub import list_repo_files, hf_hub_url
+
+
+def get_parquet_file_list(hparams: Hparams):
+    """Lấy danh sách URL đầy đủ của các file parquet trong split 'train'."""
+    all_files = list_repo_files(
+        repo_id=hparams.dataset_name,
+        repo_type='dataset',
+    )
+    train_files = [f for f in all_files if f.startswith(f'{hparams.hf_parquets_folder}/train-') and f.endswith('.parquet')]
+    file_urls = [
+        hf_hub_url(
+            repo_id=hparams.dataset_name,
+            filename=f,
+            repo_type='dataset'
+        ) for f in train_files
+    ]
+    print(f"Tìm thấy {len(file_urls)} file parquet cho training.")
+    return file_urls
+
+def get_valset(hparams: Hparams):
+    """Lấy URL đầy đủ của file parquet validation."""
+    if hparams.parquet_valid_file is None:
+        raise ValueError("Parquet valid file must be not be None for validation dataset.")
+    
+    val_dict = load_dataset(
+            'parquet', 
+            data_files={"validation": hparams.parquet_valid_file},
+        )
+    val_ds = val_dict["validation"] # type: ignore
+    print("Đã tải dataset validation từ file parquet.")
+    return val_ds
+
 
 # === HÀM TẠO DATALOADER ===
 def get_trainloader_valset(rank, world_size, hparams: Hparams):
@@ -72,8 +102,6 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
             processed_val_ds, # type: ignore
             batch_size=hparams.batch_size,
             shuffle=False,
-            num_workers=4,
-            pin_memory=True,
             collate_fn=collate_fn
         )
 
