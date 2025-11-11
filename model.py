@@ -23,7 +23,7 @@ class Tacotron2(nn.Module):
         self.decoder = Decoder(hparams)
         self.postnet = Postnet(hparams)
 
-    def parse_batch(self, batch, rank=None):
+    def parse_batch(self, batch, rank):
         # text_padded, input_lengths, mel_padded, gate_padded, \
         #     output_lengths = batch
         

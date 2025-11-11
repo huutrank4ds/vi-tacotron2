@@ -197,7 +197,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
             total_val_loss = 0.0
             with torch.no_grad():
                 for batch in val_set:
-                    model_inputs, ground_truth = model.module.parse_batch(batch)
+                    model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
                     model_outputs = model(model_inputs)
                     output_lengths = model_inputs[3]
                     val_loss, _, _, _ = criterion(
