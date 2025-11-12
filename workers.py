@@ -8,6 +8,7 @@ from loss import Tacotron2Loss
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
 import os
+from datetime import timedelta
 
 
 def init_distributed_training(rank, world_size, hparams: Hparams):
@@ -21,7 +22,8 @@ def init_distributed_training(rank, world_size, hparams: Hparams):
         backend=hparams.ddp_backend,
         init_method=hparams.ddp_url,
         world_size=world_size,
-        rank=rank
+        rank=rank,
+        timeout=timedelta(minutes=60)
     )
     print(f"[Rank {rank}] DDP initialized on GPU {rank % torch.cuda.device_count()}.")
 
@@ -193,26 +195,28 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                 'Gate': f"{loss_gate.item():.4f}"
             })
 
-        if global_step % hparams.val_interval == 0 and device_id == 0 and val_set is not None:
-            model.eval()
-            total_val_loss = 0.0
-            with torch.no_grad():
-                for batch in val_set:
-                    model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
-                    model_outputs = model(model_inputs)
-                    output_lengths = model_inputs[3]
-                    val_loss, _, _, _ = criterion(
-                        model_outputs, ground_truth, output_lengths
-                    )
-                    total_val_loss += val_loss.item()
-            avg_val_loss = total_val_loss / len(val_set)
-            print(f"\n[Rank {rank}] Step {global_step} Validation Loss: {avg_val_loss}")
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                save_checkpoint_step(model, optimizer, best_val_loss, global_step, f"checkpoint_step_{global_step}.pt", hparams)
-            model.train()
-        if hparams.ddp_run:
-            dist.barrier()  # Đồng bộ hóa các tiến trình sau mỗi validation
+        # Vào trạng thái đánh giá và lưu checkpoint theo interval
+        if global_step % hparams.val_interval == 0 and val_set is not None:
+            if rank == 0:
+                model.eval()
+                total_val_loss = 0.0
+                with torch.no_grad():
+                    for batch in val_set:
+                        model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
+                        model_outputs = model(model_inputs)
+                        output_lengths = model_inputs[3]
+                        val_loss, _, _, _ = criterion(
+                            model_outputs, ground_truth, output_lengths
+                        )
+                        total_val_loss += val_loss.item()
+                avg_val_loss = total_val_loss / len(val_set)
+                print(f"\n[Rank {rank}] Step {global_step} Validation Loss: {avg_val_loss}")
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    save_checkpoint_step(model, optimizer, best_val_loss, global_step, f"checkpoint_step_{global_step}.pt", hparams)
+                model.train()
+            if hparams.ddp_run:
+                dist.barrier()  # Đồng bộ hóa các tiến trình sau mỗi validation
     if rank == 0:
         progress_bar.close()  # type: ignore
     print(f"[Rank {rank}] Training complete.")
