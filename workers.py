@@ -6,7 +6,7 @@ from dataloader import get_trainloader_valset
 from model import Tacotron2
 from loss import Tacotron2Loss
 from torch.nn.parallel import DistributedDataParallel as DDP
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import os
 from datetime import timedelta
 import builtins
@@ -23,7 +23,7 @@ builtins.print = print_flush
 def init_distributed_training(rank, world_size, hparams: Hparams):
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available for DDP.")
-    print("Init DDP...")
+    print(f"[Rank {rank}] Init DDP...")
     # Thiết lập GPU cho mỗi tiến trình
     torch.cuda.set_device(rank)
 
@@ -213,7 +213,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                 model.eval()
                 total_val_loss = 0.0
                 with torch.no_grad():
-                    with tqdm(val_set, desc="Validation", unit="batch") as val_progress:
+                    with tqdm(val_set, desc="Validation", unit="batch", position=1) as val_progress:
                         for batch in val_progress:
                             model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
                             model_outputs = model(model_inputs)
@@ -230,7 +230,8 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                     save_checkpoint_step(model, optimizer, best_val_loss, global_step, f"checkpoint_step_{global_step}.pt", hparams)
                 model.train()
             if hparams.ddp_run:
-                dist.barrier()  # Đồng bộ hóa các tiến trình sau mỗi validation
+                print(f"[Rank {rank}] Synchronizing at step {global_step}...")
+                dist.barrier()  
     if rank == 0:
         progress_bar.close()  # type: ignore
     print(f"[Rank {rank}] Training complete.")

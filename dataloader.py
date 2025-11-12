@@ -101,7 +101,8 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
         valset = DataLoader(
             processed_val_ds, # type: ignore
             batch_size=hparams.batch_size,
-            collate_fn=collate_fn
+            collate_fn=collate_fn,
+            num_workers=0
         )
 
     print(f"[Rank {rank}] DataLoader created successfully.")
