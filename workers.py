@@ -201,7 +201,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                 model.eval()
                 total_val_loss = 0.0
                 with torch.no_grad():
-                    for batch in val_set:
+                    for batch in tqdm(val_set, desc="Validation", unit="batch"):
                         model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
                         model_outputs = model(model_inputs)
                         output_lengths = model_inputs[3]
