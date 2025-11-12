@@ -91,8 +91,11 @@ class PrepareTextMel:
         Xử lý một batch (chunk) dữ liệu khi được gọi bởi datasets.map.
         
         Input: `batch` là một dict, ví dụ: 
-               {'text': [str_1, ..., str_N], 
-                'audio': {'path': [...], 'array': [...], 'sampling_rate': [...]}}
+               {
+                'text': [str_1, ..., str_N], 
+                'audio': {'path': [...], 'array': [...], 'sampling_rate': [...]},
+                'speaker': [...]
+                }
         Output: Một dict mới với các cột đã xử lý.
         """
         # Danh sách lưu trữ kết quả
@@ -167,7 +170,7 @@ class CollateTextMel:
         """
         
         # --- 1. Đệm (Pad) Text Inputs ---
-        all_text_inputs = [item['text_inputs'] for item in batch]
+        all_text_inputs = [torch.as_tensor(item['text_inputs'], dtype=torch.long) for item in batch]
         text_padded = pad_sequence(
             all_text_inputs, 
             batch_first=True, 
@@ -175,7 +178,7 @@ class CollateTextMel:
         )
         
         # --- 2. Đệm (Pad) Mel Targets ---
-        all_mel_targets = [item['mel_targets'] for item in batch]
+        all_mel_targets = [torch.as_tensor(item['mel_targets'], dtype=torch.float) for item in batch]
         mel_padded = pad_sequence(
             all_mel_targets, 
             batch_first=True, 
@@ -186,7 +189,7 @@ class CollateTextMel:
         mel_padded = mel_padded.transpose(1, 2) 
         
         # --- 3. Đệm (Pad) Stop Tokens ---
-        all_stop_tokens = [item['stop_tokens'] for item in batch]
+        all_stop_tokens = [torch.as_tensor(item['stop_tokens'], dtype=torch.float) for item in batch]
         stop_padded = pad_sequence(
             all_stop_tokens, 
             batch_first=True, 

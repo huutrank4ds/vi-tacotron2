@@ -11,7 +11,8 @@ import os
 
 
 def init_distributed_training(rank, world_size, hparams: Hparams):
-    assert torch.cuda.is_available(), "CUDA không khả dụng cho DDP."
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available for DDP.")
     print("Init DDP...")
     # Thiết lập GPU cho mỗi tiến trình
     torch.cuda.set_device(rank)
@@ -22,7 +23,7 @@ def init_distributed_training(rank, world_size, hparams: Hparams):
         world_size=world_size,
         rank=rank
     )
-    print(f"[Rank {rank}] DDP đã được khởi tạo trên GPU {rank % torch.cuda.device_count()}.")
+    print(f"[Rank {rank}] DDP initialized on GPU {rank % torch.cuda.device_count()}.")
 
 def save_checkpoint(model, optimizer, epoch, step, filepath, hparams: Hparams):
     model_state_dict = model.module.state_dict()
@@ -48,7 +49,7 @@ def save_checkpoint_step(model, optimizer, best_val_loss, step, filepath, hparam
     if not os.path.exists(hparams.checkpoint_path):
         os.makedirs(hparams.checkpoint_path)
     torch.save(checkpoint_dict, os.path.join(hparams.checkpoint_path, filepath))
-    print(f"Đã lưu checkpoint tại {os.path.join(hparams.checkpoint_path, filepath)}")
+    print(f"Saved checkpoint at {os.path.join(hparams.checkpoint_path, filepath)}")
 
 def train_worker(rank, world_size, hparams: Hparams):
     # --- 1. KHỞI TẠO DDP VÀ DATALOADER ---
@@ -148,7 +149,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
     criterion = Tacotron2Loss().to(device_id) 
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
 
-    print(f"[Rank {rank}] Bắt đầu huấn luyện...")
+    print(f"[Rank {rank}] Starting training...")
     global_step = 0
     best_val_loss = float('inf')
 
@@ -159,7 +160,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         global_step = checkpoint['step']
         best_val_loss = checkpoint.get('best_val_loss', float('inf'))
-        print(f"[Rank {rank}] Đã tải checkpoint từ {hparams.checkpoint_path} tại step {global_step}.")
+        print(f"[Rank {rank}] Loaded checkpoint from {hparams.checkpoint_path} at step {global_step}.")
 
     progress_bar = None
     if rank == 0:
@@ -214,6 +215,6 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
             dist.barrier()  # Đồng bộ hóa các tiến trình sau mỗi validation
     if rank == 0:
         progress_bar.close()  # type: ignore
-    print(f"[Rank {rank}] Huấn luyện hoàn tất.")
+    print(f"[Rank {rank}] Training complete.")
     if hparams.ddp_run:
         dist.destroy_process_group()

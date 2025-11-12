@@ -19,7 +19,7 @@ def get_parquet_file_list(hparams: Hparams):
             repo_type='dataset'
         ) for f in train_files
     ]
-    print(f"Tìm thấy {len(file_urls)} file parquet cho training.")
+    print(f"Found {len(file_urls)} parquet files for training dataset.")
     return file_urls
 
 def get_valset(hparams: Hparams):
@@ -32,7 +32,7 @@ def get_valset(hparams: Hparams):
             data_files={"validation": hparams.parquet_valid_file},
         )
     val_ds = val_dict["validation"] # type: ignore
-    print("Đã tải dataset validation từ file parquet.")
+    print("Validation dataset loaded from parquet file.")
     return val_ds
 
 
@@ -101,9 +101,8 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
         valset = DataLoader(
             processed_val_ds, # type: ignore
             batch_size=hparams.batch_size,
-            shuffle=False,
             collate_fn=collate_fn
         )
 
-    print(f"[Rank {rank}] Đã tạo DataLoader thành công.")
+    print(f"[Rank {rank}] DataLoader created successfully.")
     return trainloader, valset
