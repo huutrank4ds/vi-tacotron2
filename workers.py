@@ -229,10 +229,6 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                     best_val_loss = avg_val_loss
                     save_checkpoint_step(model, optimizer, best_val_loss, global_step, f"checkpoint_step_{global_step}.pt", hparams)
                 model.train()
-            if hparams.ddp_run:
-                print(f"[Rank {rank}] Synchronizing at step {global_step}...")
-                dist.barrier()  
-                train_data_iter = iter(train_loader)
     if rank == 0:
         progress_bar.close()  # type: ignore
     print(f"[Rank {rank}] Training complete.")
