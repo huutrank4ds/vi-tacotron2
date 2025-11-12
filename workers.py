@@ -175,7 +175,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
 
     progress_bar = None
     if rank == 0:
-        progress_bar = tqdm(initial=global_step, total=hparams.max_step_training, desc="Training", unit="step")
+        progress_bar = tqdm(initial=global_step, total=hparams.max_step_training, desc="Training", unit="step", position=0)
 
     model.train()
     while global_step < hparams.max_step_training:
@@ -213,7 +213,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                 model.eval()
                 total_val_loss = 0.0
                 with torch.no_grad():
-                    with tqdm(val_set, desc="Validation", unit="batch", position=1) as val_progress:
+                    with tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1) as val_progress:
                         for batch in val_progress:
                             model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
                             model_outputs = model(model_inputs)
@@ -232,6 +232,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
             if hparams.ddp_run:
                 print(f"[Rank {rank}] Synchronizing at step {global_step}...")
                 dist.barrier()  
+                train_data_iter = iter(train_loader)
     if rank == 0:
         progress_bar.close()  # type: ignore
     print(f"[Rank {rank}] Training complete.")
