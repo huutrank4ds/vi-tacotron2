@@ -196,8 +196,8 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
             })
 
         # Vào trạng thái đánh giá và lưu checkpoint theo interval
-        if global_step % hparams.val_interval == 0 and val_set is not None:
-            if rank == 0:
+        if global_step % hparams.val_interval == 0:
+            if rank == 0 and val_set is not None:
                 model.eval()
                 total_val_loss = 0.0
                 with torch.no_grad():
