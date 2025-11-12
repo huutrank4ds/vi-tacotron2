@@ -201,14 +201,16 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                 model.eval()
                 total_val_loss = 0.0
                 with torch.no_grad():
-                    for batch in tqdm(val_set, desc="Validation", unit="batch"):
-                        model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
-                        model_outputs = model(model_inputs)
-                        output_lengths = model_inputs[3]
-                        val_loss, _, _, _ = criterion(
+                    with tqdm(val_set, desc="Validation", unit="batch") as val_progress:
+                        for batch in val_progress:
+                            model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
+                            model_outputs = model(model_inputs)
+                            output_lengths = model_inputs[3]
+                            val_loss, _, _, _ = criterion(
                             model_outputs, ground_truth, output_lengths
                         )
                         total_val_loss += val_loss.item()
+                        val_progress.set_postfix({'Val Loss': f"{val_loss.item():.4f}"})
                 avg_val_loss = total_val_loss / len(val_set)
                 print(f"\n[Rank {rank}] Step {global_step} Validation Loss: {avg_val_loss}")
                 if avg_val_loss < best_val_loss:
