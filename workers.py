@@ -176,7 +176,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
             train_data_iter = iter(train_loader)
             batch = next(train_data_iter) # type: ignore
 
-        optimizer.zero_grad()
+        # optimizer.zero_grad()
         model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
         model_outputs = model(model_inputs)
         output_length = model_inputs[3]  # output_lengths
@@ -185,6 +185,8 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
         )
         loss.backward()
         optimizer.step()
+        optimizer.zero_grad()
+
         global_step += 1
         if rank == 0:
             progress_bar.update(1) # type: ignore
@@ -215,7 +217,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                 print(f"\n[Rank {rank}] Step {global_step} Validation Loss: {avg_val_loss}")
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
-                    save_checkpoint_step(model, optimizer, best_val_loss, global_step, f"checkpoint_step_{global_step}.pt", hparams)
+                    save_checkpoint_step(model.module, optimizer, best_val_loss, global_step, f"checkpoint_step_{global_step}.pt", hparams)
                 model.train()
             if hparams.ddp_run:
                 dist.barrier()  # Đồng bộ hóa các tiến trình sau mỗi validation
