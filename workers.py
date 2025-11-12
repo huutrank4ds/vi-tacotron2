@@ -9,6 +9,15 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
 import os
 from datetime import timedelta
+import builtins
+
+# Override print để luôn flush output
+if not hasattr(builtins, "original_print_safe"):
+    builtins.original_print_safe = builtins.print #type: ignore
+def print_flush(*args, **kwargs):
+    kwargs['flush'] = True
+    builtins.original_print_safe(*args, **kwargs) #type: ignore
+builtins.print = print_flush
 
 
 def init_distributed_training(rank, world_size, hparams: Hparams):
@@ -173,6 +182,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
         try:
             batch = next(train_data_iter) # type: ignore
         except StopIteration:
+            print("[Info] Reinitializing train data iterator... ")
             train_data_iter = iter(train_loader)
             batch = next(train_data_iter) # type: ignore
 
