@@ -74,6 +74,7 @@ class Hparams:
     batch_size: int = 32
     epochs: int = 500
     checkpoint_path: str = "checkpoints/"
+    name_file_checkpoint: str = "checkpoint_step_1000.pt"
     val_interval: int = 100
     log_interval: int = 100
     seed: int = 42

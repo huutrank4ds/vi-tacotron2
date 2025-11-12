@@ -144,39 +144,47 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
     device_id = rank % torch.cuda.device_count()
     if hparams.ddp_run:
         init_distributed_training(device_id, world_size, hparams)
-        # Giả sử get_trainloader_valset trả về loader dùng TextMelCollate
+
+    # Lấy DataLoader và Validation set
     train_loader, val_set = get_trainloader_valset(
         device_id, 
         world_size, 
         hparams
     )
-    train_data_iter = iter(train_loader)  # Tạo iterator từ DataLoader
+    # Tạo iterator từ DataLoader
+    train_data_iter = iter(train_loader)  
+
     # Load model bên trong hàm worker
     model = Tacotron2(hparams)
-    model = model.to(device_id)
+    model = model.to(device_id) 
     model = DDP(model, device_ids=[device_id])
 
-    # --- 2. KHỞI TẠO HÀM LOSS VÀ OPTIMIZER ---
+    # Khởi tạo hàm loss và optimizer
     criterion = Tacotron2Loss().to(device_id) 
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
 
     print(f"[Rank {rank}] Starting training...")
+
+    # Thiết lập biến đếm bước và best_val_loss
     global_step = 0
     best_val_loss = float('inf')
 
     # Load từ checkpoint nếu có
-    if os.path.exists(hparams.checkpoint_path):
-        checkpoint = torch.load(hparams.checkpoint_path, map_location=f'cuda:{device_id}')
+    path_to_checkpoint = os.path.join(hparams.checkpoint_path, hparams.name_file_checkpoint)
+    if os.path.exists(path_to_checkpoint):
+        checkpoint = torch.load(path_to_checkpoint, map_location=f'cuda:{device_id}')
         model.module.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         global_step = checkpoint['step']
         best_val_loss = checkpoint.get('best_val_loss', float('inf'))
         print(f"[Rank {rank}] Loaded checkpoint from {hparams.checkpoint_path} at step {global_step}.")
 
+    # Thiết lập thanh tiến trình nếu là rank 0
     progress_bar = None
     if rank == 0:
         progress_bar = tqdm(initial=global_step, total=hparams.max_step_training, desc="Training", unit="step", position=0)
 
+    # Bắt đầu vòng lặp huấn luyện
     model.train()
     while global_step < hparams.max_step_training:
         try:
@@ -186,7 +194,6 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
             train_data_iter = iter(train_loader)
             batch = next(train_data_iter) # type: ignore
 
-        # optimizer.zero_grad()
         model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
         model_outputs = model(model_inputs)
         output_length = model_inputs[3]  # output_lengths
@@ -223,6 +230,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                         )
                         total_val_loss += val_loss.item()
                         val_progress.set_postfix({'Val Loss': f"{val_loss.item():.4f}"})
+                    val_progress.close()
                 avg_val_loss = total_val_loss / len(val_set)
                 print(f"\n[Rank {rank}] Step {global_step} Validation Loss: {avg_val_loss}")
                 if avg_val_loss < best_val_loss:
