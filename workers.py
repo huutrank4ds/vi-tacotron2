@@ -217,7 +217,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                 print(f"\n[Rank {rank}] Step {global_step} Validation Loss: {avg_val_loss}")
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
-                    save_checkpoint_step(model.module, optimizer, best_val_loss, global_step, f"checkpoint_step_{global_step}.pt", hparams)
+                    save_checkpoint_step(model, optimizer, best_val_loss, global_step, f"checkpoint_step_{global_step}.pt", hparams)
                 model.train()
             if hparams.ddp_run:
                 dist.barrier()  # Đồng bộ hóa các tiến trình sau mỗi validation
