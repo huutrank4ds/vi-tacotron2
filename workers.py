@@ -185,12 +185,13 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
 
     # Thiết lập thanh tiến trình nếu là rank 0
     progress_bar = None
+    step_training = hparams.max_step_training + global_step
     if rank == 0:
-        progress_bar = tqdm(initial=global_step, total=hparams.max_step_training, desc="Training", unit="step", position=0)
+        progress_bar = tqdm(initial=global_step, total=step_training, desc="Training", unit="step", position=0)
 
     # Bắt đầu vòng lặp huấn luyện
     model.train()
-    step_training = hparams.max_step_training + global_step
+    
     while global_step < step_training:
         try:
             batch = next(train_data_iter) # type: ignore
