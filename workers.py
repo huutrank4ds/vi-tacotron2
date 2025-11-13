@@ -190,7 +190,8 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
 
     # Bắt đầu vòng lặp huấn luyện
     model.train()
-    while global_step < hparams.max_step_training:
+    step_training = hparams.max_step_training + global_step
+    while global_step < step_training:
         try:
             batch = next(train_data_iter) # type: ignore
         except StopIteration:
