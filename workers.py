@@ -6,7 +6,7 @@ from dataloader import get_trainloader_valset
 from model import Tacotron2
 from loss import Tacotron2Loss
 from torch.nn.parallel import DistributedDataParallel as DDP
-from tqdm.notebook import tqdm
+from tqdm.auto import tqdm
 import os
 from datetime import timedelta
 import builtins
@@ -191,7 +191,6 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
 
     # Bắt đầu vòng lặp huấn luyện
     model.train()
-    
     while global_step < step_training:
         try:
             batch = next(train_data_iter) # type: ignore
