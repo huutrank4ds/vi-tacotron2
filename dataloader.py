@@ -37,11 +37,13 @@ def get_valset(hparams: Hparams):
 
 
 # === HÀM TẠO DATALOADER ===
-def get_trainloader_valset(rank, world_size, hparams: Hparams):
+def get_trainloader_valset(rank, world_size, hparams: Hparams, seed=None):
     """
     Tải và chuẩn bị DataLoader cho training (streaming, sharded)
     và Validation set (chỉ rank 0, non-streaming).
     """
+    
+    seed = hparams.seed if seed is None else seed
     
     # --- 0. Khởi tạo processors ---
     # Sử dụng đối tượng hparams được truyền vào hàm
@@ -60,7 +62,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams):
     )
 
     if hparams.shuffle:
-        shuffled_ds = iterable_train_ds.shuffle(seed=hparams.seed, buffer_size=hparams.shuffle_buffer_size) # type: ignore
+        shuffled_ds = iterable_train_ds.shuffle(seed=seed, buffer_size=hparams.shuffle_buffer_size) # type: ignore
         sharded_ds = shuffled_ds.shard(num_shards=world_size, index=rank) # type: ignore
     else:
         sharded_ds = iterable_train_ds.shard(num_shards=world_size, index=rank) # type: ignore

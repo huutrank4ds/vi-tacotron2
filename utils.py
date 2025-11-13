@@ -1,6 +1,14 @@
 import numpy as np
 import torch
 
+def load_checkpoint(checkpoint_path, model, device,optimizer=None):
+    """Tải checkpoint từ đường dẫn và khôi phục trạng thái cho model và optimizer (nếu có)."""
+    print(f"Loading checkpoint from {checkpoint_path}")
+    checkpoint_dict = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint_dict['model_state_dict'])
+    if optimizer and 'optimizer_state_dict' in checkpoint_dict:
+        optimizer.load_state_dict(checkpoint_dict['optimizer_state_dict'])
+    return checkpoint_dict
 
 def get_mask_from_lengths(lengths):
     """Tạo mask từ lengths - an toàn với cả CPU và GPU"""

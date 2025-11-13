@@ -6,7 +6,7 @@ from dataloader import get_trainloader_valset
 from model import Tacotron2
 from loss import Tacotron2Loss
 from torch.nn.parallel import DistributedDataParallel as DDP
-from tqdm.auto import tqdm
+from tqdm.notebook import tqdm
 import os
 from datetime import timedelta
 import builtins
@@ -49,13 +49,14 @@ def save_checkpoint(model, optimizer, epoch, step, filepath, hparams: Hparams):
     torch.save(checkpoint_dict, os.path.join(hparams.checkpoint_path, filepath))
     print(f"Đã lưu checkpoint tại {os.path.join(hparams.checkpoint_path, filepath)}")
 
-def save_checkpoint_step(model, optimizer, best_val_loss, step, filepath, hparams: Hparams):
+def save_checkpoint_step(model, optimizer, best_val_loss, epoch, step, filepath, hparams: Hparams):
     model_state_dict = model.module.state_dict()
     checkpoint_dict = {
         'model_state_dict': model_state_dict,
         'optimizer_state_dict': optimizer.state_dict(),
         'step': step,
-        'best_val_loss': best_val_loss
+        'best_val_loss': best_val_loss,
+        'epoch': epoch
     }
     if not os.path.exists(hparams.checkpoint_path):
         os.makedirs(hparams.checkpoint_path)
@@ -143,16 +144,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
     """
     device_id = rank % torch.cuda.device_count()
     if hparams.ddp_run:
-        init_distributed_training(device_id, world_size, hparams)
-
-    # Lấy DataLoader và Validation set
-    train_loader, val_set = get_trainloader_valset(
-        device_id, 
-        world_size, 
-        hparams
-    )
-    # Tạo iterator từ DataLoader
-    train_data_iter = iter(train_loader)  
+        init_distributed_training(device_id, world_size, hparams) 
 
     # Load model bên trong hàm worker
     model = Tacotron2(hparams)
@@ -167,6 +159,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
 
     # Thiết lập biến đếm bước và best_val_loss
     global_step = 0
+    epoch = 0
     best_val_loss = float('inf')
 
     # Load từ checkpoint nếu có
@@ -177,7 +170,18 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         global_step = checkpoint['step']
         best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+        epoch = checkpoint.get('epoch', 0) + 1
         print(f"[Rank {rank}] Loaded checkpoint from {hparams.checkpoint_path} at step {global_step}.")
+
+    # Lấy DataLoader và Validation set
+    train_loader, val_set = get_trainloader_valset(
+        device_id, 
+        world_size, 
+        hparams,
+        hparams.seed + epoch
+    )
+    # Tạo iterator từ DataLoader
+    train_data_iter = iter(train_loader) 
 
     # Thiết lập thanh tiến trình nếu là rank 0
     progress_bar = None
@@ -205,6 +209,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
         optimizer.zero_grad()
 
         global_step += 1
+
         if rank == 0:
             progress_bar.update(1) # type: ignore
             progress_bar.set_postfix({ # type: ignore
@@ -235,7 +240,7 @@ def train_worker_by_step(rank, world_size, hparams: Hparams):
                 print(f"\n[Rank {rank}] Step {global_step} Validation Loss: {avg_val_loss}")
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
-                    save_checkpoint_step(model, optimizer, best_val_loss, global_step, f"checkpoint_step_{global_step}.pt", hparams)
+                    save_checkpoint_step(model, optimizer, best_val_loss, epoch, global_step, f"checkpoint_step_{global_step}.pt", hparams)
                 model.train()
     if rank == 0:
         progress_bar.close()  # type: ignore
