@@ -8,6 +8,8 @@ class Hparams:
     dataset_config: str = 'default'
     hf_parquets_folder: str = 'data'
     parquet_valid_file: Optional[str] = None  # Đường dẫn tới file validation nếu có
+    speaker_embeddings_file: Optional[str] = None  # Đường dẫn tới file embeddings nếu có
+    validation_speaker_embeddings_file: Optional[str] = None  # Đường dẫn tới file embeddings validation nếu có
     num_train_samples: int = 1043443
 
 
@@ -23,18 +25,22 @@ class Hparams:
     
     
     # Text
-    n_symbols: int = 98 # Phải khớp với len(symbols)
-    symbols: str = ' abcdefghijklmnopqrstuvwxyzáàảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ.,!?'
+    _pad = '_' 
+    _punctuation = '!,.:;? '
+    _special = '-'
+    _letters = 'aàáảãạăằắẳẵặâầấẩẫậbcdđeèéẻẽẹêềếểễệghiìíỉĩịklmnoòóỏõọôồốổỗộơớờớởỡợpqrstuùúủũụưừứửữựvxyỳýỷỹỵ'
+    symbols: list = [_pad] + list(_special) + list(_punctuation) + list(_letters)
+    n_symbols: int = len(symbols)
     symbols_embedding_dim: int = 512
     text_pad_value: int = 0
     
     # Audio
     target_sr: int = 22050
-    n_fft: int = 1024
-    hop_length: int = 256
-    win_length: int = 1024
-    f_min: float = 0.0
-    f_max: float = 8000.0
+    n_fft: int = 2048
+    hop_length: int = 275
+    win_length: int = 1102
+    f_min: float = 125.0
+    f_max: float = 7600.0
     mel_pad_value: float = -11.5129  # log(1e-5)
     n_mel_channels: int = 80
     stop_pad_value: float = 1.0
@@ -43,6 +49,7 @@ class Hparams:
     # (Đây là các giá trị chuẩn của Tacotron 2)
         
     # --- Encoder ---
+    speaker_embedding_dim: int = 192
     encoder_n_convolutions: int = 3
     encoder_kernel_size: int = 5
     encoder_embedding_dim: int = 512
@@ -81,4 +88,5 @@ class Hparams:
     shuffle: bool = True
     shuffle_buffer_size: int = 10_000
     max_step_training: int = 5000
+    early_stopping_patience = 5
     

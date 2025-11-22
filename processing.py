@@ -12,11 +12,13 @@ class PrepareTextMel:
     2. Có thể gọi được (callable) để xử lý các batch (chunks) từ 
        datasets.map, chuyển đổi text và audio.
     """
-    def __init__(self, hparams: Hparams):
+    def __init__(self, hparams: Hparams, speaker_embedding_dict: dict):
         """
         Khởi tạo processor với các siêu tham số.
         """
         self.hparams = hparams 
+        self.speaker_embedding_dict = speaker_embedding_dict
+        self._speaker_to_id = {s: i for i, s in self.speaker_embedding_dict['speaker_map'].items()}
 
         # --- Cấu hình Text ---
         self.symbols = hparams.symbols
@@ -103,6 +105,7 @@ class PrepareTextMel:
         text_lengths_list = []
         mel_targets_list = []
         mel_lengths_list = []
+        speaker_embeddings_list = []
         stop_tokens_list = []
 
         # Lặp qua từng mẫu trong batch (chunk)
@@ -117,6 +120,17 @@ class PrepareTextMel:
             audio_array = audio_data['array']
             original_sr = audio_data['sampling_rate']
             
+            speaker_name = batch['speaker'][i]
+            speaker_id = self._speaker_to_id.get(speaker_name, None)
+            # 2. Lấy embedding & Xử lý trường hợp thiếu
+            if speaker_name in self.speaker_embedding_dict:
+                speaker_embedding = self.speaker_embedding_dict['mean_embeddings'][speaker_id]
+            else:
+                # Fallback: Tạo vector 0 nếu không tìm thấy
+                # Giả sử embedding dim là 192 (hoặc lấy từ hparams)
+                speaker_embedding = torch.zeros(192, dtype=torch.float32)
+                # Hoặc: continue (nếu muốn bỏ qua mẫu không có embedding)
+
             # log_mel có shape: [n_mels, n_frames]
             log_mel = self.audio_to_mel(audio_array, original_sr)
 
@@ -138,6 +152,7 @@ class PrepareTextMel:
             text_lengths_list.append(text_len)
             mel_targets_list.append(mel_target)
             mel_lengths_list.append(mel_len)
+            speaker_embeddings_list.append(speaker_embedding)
             stop_tokens_list.append(stop_token)
 
         # Trả về dict các danh sách
@@ -146,6 +161,7 @@ class PrepareTextMel:
             'text_lengths': text_lengths_list,
             'mel_targets': mel_targets_list,
             'mel_lengths': mel_lengths_list,
+            'speaker_embeddings': speaker_embeddings_list,
             'stop_tokens': stop_tokens_list
         }
 
@@ -166,7 +182,7 @@ class CollateTextMel:
         Input: `batch` là một list các dict, 
                 mỗi dict có các keys: 
                 'text_inputs', 'text_lengths', 
-                'mel_targets', 'mel_lengths', 'stop_tokens'.
+                'mel_targets', 'mel_lengths', 'stop_tokens', 'speaker_embeddings'.
         """
         
         # --- 1. Đệm (Pad) Text Inputs ---
@@ -199,11 +215,13 @@ class CollateTextMel:
         # --- 4. Lấy độ dài (Lengths) ---
         text_lengths = torch.tensor([item['text_lengths'] for item in batch], dtype=torch.long)
         mel_lengths = torch.tensor([item['mel_lengths'] for item in batch], dtype=torch.long)
+        speaker_embeddings = torch.stack([torch.as_tensor(item['speaker_embeddings'], dtype=torch.float) for item in batch])
         
         return {
             'text_inputs': text_padded,      # [B, max_text_len]
             'text_lengths': text_lengths,    # [B]
             'mel_targets': mel_padded,       # [B, n_mels, max_mel_len]
-            'mel_lengths': mel_lengths,      # [B]
-            'stop_tokens': stop_padded       # [B, max_mel_len]
+            'mel_lengths': mel_lengths,      # [B],
+            'speaker_embeddings': speaker_embeddings,  # [B, embedding_dim]
+            'stop_tokens': stop_padded,      # [B, max_mel_len]
         }

@@ -3,6 +3,7 @@ from datasets import load_dataset
 from processing import PrepareTextMel, CollateTextMel
 from config import Hparams
 from huggingface_hub import list_repo_files, hf_hub_url
+import torch
 
 
 def get_parquet_file_list(hparams: Hparams):
@@ -47,7 +48,15 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams, seed=None):
     
     # --- 0. Khởi tạo processors ---
     # Sử dụng đối tượng hparams được truyền vào hàm
-    prepare_text_mel = PrepareTextMel(hparams)
+    try: 
+        if hparams.speaker_embeddings_file is None or hparams.validation_speaker_embeddings_file is None:
+            raise ValueError("Speaker embeddings file path must be provided in hparams.")
+        speaker_embedding_dict = torch.load(hparams.speaker_embeddings_file)
+        speaker_embedding_dict_val = torch.load(hparams.validation_speaker_embeddings_file)
+    except Exception as e:
+        raise RuntimeError(f"Error loading speaker embeddings: {e}")
+    prepare_text_mel_train = PrepareTextMel(hparams, speaker_embedding_dict)
+    prepare_text_mel_val = PrepareTextMel(hparams, speaker_embedding_dict_val) 
     collate_fn = CollateTextMel(hparams)
 
     DATASET_NAME = hparams.dataset_name
@@ -68,7 +77,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams, seed=None):
         sharded_ds = iterable_train_ds.shard(num_shards=world_size, index=rank) # type: ignore
 
     processed_ds = sharded_ds.map(
-        prepare_text_mel,
+        prepare_text_mel_train,
         batched=True,
         batch_size=1000
     )
@@ -95,7 +104,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams, seed=None):
             raise ValueError("Parquet valid file must be not be None for validation dataset.")
         
         processed_val_ds = val_ds.map( # type: ignore
-            prepare_text_mel, 
+            prepare_text_mel_val, 
             batched=True,
             batch_size=1000
         )

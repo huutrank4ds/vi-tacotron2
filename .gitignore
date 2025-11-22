@@ -1,2 +1,6 @@
 .env
 checkpoints/
+.venv/
+__pycache__/
+*.pyc
+indexs/*.pt

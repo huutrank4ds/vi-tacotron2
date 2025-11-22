@@ -23,6 +23,28 @@ class Tacotron2(nn.Module):
         self.decoder = Decoder(hparams)
         self.postnet = Postnet(hparams)
 
+        self.speaker_projection = nn.Sequential(
+            nn.Linear(hparams.speaker_embedding_dim, 256),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(256, hparams.encoder_embedding_dim) 
+        )
+        self.init_speaker_projection_weights()
+
+    def init_speaker_projection_weights(self):
+        """
+        Khởi tạo trọng số cho khối speaker projection.
+        Sử dụng Xavier Uniform cho Linear layers.
+        """
+        for module in self.speaker_projection.modules():
+            if isinstance(module, nn.Linear):
+                # 1. Khởi tạo Weights: Xavier Uniform
+                nn.init.xavier_uniform_(module.weight)
+                
+                # 2. Khởi tạo Bias: Về 0
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0.0)
+
     def parse_batch(self, batch, rank):
         # text_padded, input_lengths, mel_padded, gate_padded, \
         #     output_lengths = batch
@@ -31,6 +53,7 @@ class Tacotron2(nn.Module):
         input_lengths = batch['text_lengths']
         mel_padded = batch['mel_targets']
         gate_padded = batch['stop_tokens']
+        speaker_embeddings = batch['speaker_embeddings']
         output_lengths = batch['mel_lengths']
 
         text_padded = to_gpu(text_padded, rank).long()
@@ -38,8 +61,10 @@ class Tacotron2(nn.Module):
         mel_padded = to_gpu(mel_padded, rank).float()
         gate_padded = to_gpu(gate_padded, rank).float()
         output_lengths = to_gpu(output_lengths, rank).long()
+        speaker_embeddings = to_gpu(speaker_embeddings, rank).float()
+
         return (
-            (text_padded, input_lengths, mel_padded, output_lengths),
+            (text_padded, input_lengths, mel_padded, output_lengths, speaker_embeddings),
             (mel_padded, gate_padded))
 
     def parse_output(self, outputs, output_lengths=None):
@@ -55,12 +80,14 @@ class Tacotron2(nn.Module):
         return outputs
 
     def forward(self, inputs):
-        text_inputs, text_lengths, mels, output_lengths = inputs
+        text_inputs, text_lengths, mels, output_lengths, speaker_embeddings = inputs
         text_lengths, output_lengths = text_lengths.detach(), output_lengths.detach()
 
         embedded_inputs = self.embedding(text_inputs).transpose(1, 2)
 
         encoder_outputs = self.encoder(embedded_inputs, text_lengths)
+        speaker_projection = self.speaker_projection(speaker_embeddings)
+        encoder_outputs = encoder_outputs + speaker_projection.unsqueeze(1)
 
         mel_outputs, gate_outputs, alignments = self.decoder(
             encoder_outputs, mels, memory_lengths=text_lengths)
