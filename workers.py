@@ -228,7 +228,7 @@ def train_worker_by_step(rank, world_size, hparams):
 
         # --- [B] Training Step ---
         optimizer.zero_grad()
-        model_inputs, ground_truth = raw_model.parse_batch(batch) #type: ignore
+        model_inputs, ground_truth = raw_model.parse_batch(batch, rank) #type: ignore
         model_outputs = model(model_inputs)
         
         output_length = model_inputs[3]
@@ -239,7 +239,7 @@ def train_worker_by_step(rank, world_size, hparams):
         loss.backward()
         
         # Gradient Clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.grad_clip_thresh)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.grad_clip_thresh)
         
         optimizer.step()
         global_step += 1
@@ -248,7 +248,9 @@ def train_worker_by_step(rank, world_size, hparams):
             progress_bar.update(1) # type: ignore
             progress_bar.set_postfix({  # type: ignore
                 'Loss': f"{loss.item():.4f}",
-                'Mel': f"{loss_mel.item():.4f}"
+                'Mel': f"{loss_mel.item():.4f}",
+                'Postnet': f"{loss_mel_postnet.item():.4f}",
+                'Gate': f"{loss_gate.item():.4f}"
             })
 
         # --- [C] Validation & Early Stopping ---
