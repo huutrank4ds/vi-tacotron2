@@ -1,5 +1,11 @@
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+_pad = '_'
+_punctuation = '!,.:;? '
+_special = '-'
+_letters = 'aàáảãạăằắẳẵặâầấẩẫậbcdđeèéẻẽẹêềếểễệghiìíỉĩịklmnoòóỏõọôồốổỗộơớờớởỡợpqrstuùúủũụưừứửữựvxyỳýỷỹỵ'
+SYMBOLS_LIST = [_pad] + list(_special) + list(_punctuation) + list(_letters)
 
 @dataclass
 class Hparams:
@@ -25,12 +31,8 @@ class Hparams:
     
     
     # Text
-    _pad = '_' 
-    _punctuation = '!,.:;? '
-    _special = '-'
-    _letters = 'aàáảãạăằắẳẵặâầấẩẫậbcdđeèéẻẽẹêềếểễệghiìíỉĩịklmnoòóỏõọôồốổỗộơớờớởỡợpqrstuùúủũụưừứửữựvxyỳýỷỹỵ'
-    symbols: list = [_pad] + list(_special) + list(_punctuation) + list(_letters)
-    n_symbols: int = len(symbols)
+    symbols: List[str] = field(default_factory=lambda: SYMBOLS_LIST)
+    n_symbols: int = len(SYMBOLS_LIST)
     symbols_embedding_dim: int = 512
     text_pad_value: int = 0
     
