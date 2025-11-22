@@ -50,7 +50,7 @@ def save_checkpoint(model, optimizer, epoch, step, filepath, hparams: Hparams):
     print(f"Đã lưu checkpoint tại {os.path.join(hparams.checkpoint_path, filepath)}")
 
 def save_checkpoint_step(model, optimizer, best_val_loss, epoch, step, filepath, hparams: Hparams):
-    model_state_dict = model.module.state_dict()
+    model_state_dict = model.state_dict()
     checkpoint_dict = {
         'model_state_dict': model_state_dict,
         'optimizer_state_dict': optimizer.state_dict(),
