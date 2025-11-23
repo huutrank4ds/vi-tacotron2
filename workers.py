@@ -108,11 +108,10 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
     # --- 4. Load Speaker Embeddings ---
     # Giả sử hàm này trả về dict
-    speaker_embedding_dict = torch.load(hparams.speaker_embeddings_file)
-    speaker_embedding_dict_val = torch.load(hparams.validation_speaker_embeddings_file)
+    speaker_embedding_dict , speaker_embedding_dict_val = load_speaker_embeddings(hparams)
     
     # Chuẩn bị sẵn Processor (truyền dict vào để không phải load lại nhiều lần)
-    # prepare_text_mel_train = ... (Khởi tạo bên trong get_trainloader_chunk cũng được nhưng truyền dict vào)
+    prepare_text_mel_train = PrepareTextMel(hparams, speaker_embedding_dict)
     collate_fn = CollateTextMel(hparams)
 
     # Load Validation Set (Chỉ Rank 0 cần)
@@ -140,8 +139,8 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
             # Hàm này phải đảm bảo logic: Rank 0 load cache, Rank > 0 đợi barrier
             train_loader = get_trainloader_chunk(
                 rank, world_size, hparams, chunk_idx,
-                speaker_embedding_dict, # Truyền dict vào
-                speaker_embedding_dict_val,
+                prepare_text_mel_train,
+                collate_fn,
                 seed=hparams.seed + epoch
             )
 
@@ -168,8 +167,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     pbar.set_postfix({'Loss': f"{loss.item():.4f}"}) #type: ignore
 
             # --- KẾT THÚC 1 CHUNK: VALIDATION ---
-            
-            # [FIX 1] Khởi tạo stop_signal cho TẤT CẢ các rank
+            # Khởi tạo stop_signal cho TẤT CẢ các rank
             stop_signal = torch.tensor(0).to(device_id)
 
             # Đồng bộ trước khi validate để chắc chắn Rank 0 không chạy trước
@@ -203,13 +201,12 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                         print(f"==> EARLY STOPPING TRIGGERED!")
                         stop_signal = torch.tensor(1).to(device_id) # Set cờ dừng
             
-            # [FIX 2] Broadcast tín hiệu dừng
+            # Broadcast tín hiệu dừng
             if hparams.ddp_run:
                 dist.broadcast(stop_signal, src=0)
             
             # --- DỌN DẸP CHUNK CACHE ---
-            
-            # [FIX 3] Hủy DataLoader và GC trước khi xóa file
+            # Hủy DataLoader và GC trước khi xóa file
             # Phải hủy ở tất cả các rank vì rank nào cũng đang giữ file handle
             if rank == 0: pbar.close() # type: ignore
             del train_loader
@@ -225,7 +222,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
             # Đợi xóa xong
             if hparams.ddp_run: dist.barrier()
 
-            # [FIX 4] Kiểm tra tín hiệu dừng để Break
+            # Kiểm tra tín hiệu dừng để Break
             if stop_signal.item() == 1:
                 if rank == 0: print("Stopping training loop...")
                 should_stop_global = True # Đánh dấu để thoát vòng lặp Epoch bên ngoài
