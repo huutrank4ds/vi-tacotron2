@@ -6,6 +6,7 @@ _punctuation = '!,.:;? '
 _special = '-'
 _letters = 'aàáảãạăằắẳẵặâầấẩẫậbcdđeèéẻẽẹêềếểễệghiìíỉĩịklmnoòóỏõọôồốổỗộơớờớởỡợpqrstuùúủũụưừứửữựvxyỳýỷỹỵ'
 SYMBOLS_LIST = [_pad] + list(_special) + list(_punctuation) + list(_letters)
+DATASET_CHUNKS_DEFAULT = [f'/kaggle/input/phoaudiobook-{i}' for i in range(1, 13)]
 
 @dataclass
 class Hparams:
@@ -81,7 +82,6 @@ class Hparams:
     learning_rate: float = 1e-3
     weight_decay: float = 1e-6
     batch_size: int = 32
-    epochs: int = 500
     checkpoint_path: str = "checkpoints/"
     name_file_checkpoint: str = "checkpoint_step_1000.pt"
     val_interval: int = 100
@@ -90,5 +90,10 @@ class Hparams:
     shuffle: bool = True
     shuffle_buffer_size: int = 10_000
     max_step_training: int = 5000
-    early_stopping_patience = 5
+    early_stopping_patience: int = 5
+    max_epochs: int = 50
+
+    # --- Các tham số cho dữ liệu lớn ---
+    dataset_chunks: List[str] = field(default_factory=lambda: DATASET_CHUNKS_DEFAULT)
+    cache_chunk_dir: str = '/kaggle/working/chunk_cache'
     

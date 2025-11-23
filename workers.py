@@ -1,8 +1,9 @@
+import gc
 import torch
 from config import Hparams
 from torch.optim import AdamW
 import torch.distributed as dist
-from dataloader import get_trainloader_valset
+from dataloader import get_trainloader_valset, get_trainloader_chunk, load_speaker_embeddings, get_valloader, remove_chunk_cache
 from model import Tacotron2
 from loss import Tacotron2Loss
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -10,6 +11,7 @@ from tqdm.auto import tqdm
 import os
 from datetime import timedelta
 import builtins
+from processing import PrepareTextMel, CollateTextMel
 
 # Override print để luôn flush output
 if not hasattr(builtins, "original_print_safe"):
@@ -36,18 +38,18 @@ def init_distributed_training(rank, world_size, hparams: Hparams):
     )
     print(f"[Rank {rank}] DDP initialized on GPU {rank % torch.cuda.device_count()}.")
 
-def save_checkpoint(model, optimizer, epoch, step, filepath, hparams: Hparams):
-    model_state_dict = model.module.state_dict()
+def save_checkpoint_chunk(model, optimizer, epoch, chunk_index, filepath, hparams: Hparams):
+    model_state_dict = model.state_dict()
     checkpoint_dict = {
         'model_state_dict': model_state_dict,
         'optimizer_state_dict': optimizer.state_dict(),
         'epoch': epoch,
-        'step': step
+        'chunk_index': chunk_index
     }
     if not os.path.exists(hparams.checkpoint_path):
         os.makedirs(hparams.checkpoint_path)
     torch.save(checkpoint_dict, os.path.join(hparams.checkpoint_path, filepath))
-    print(f"Đã lưu checkpoint tại {os.path.join(hparams.checkpoint_path, filepath)}")
+    print(f"Saved checkpoint at {os.path.join(hparams.checkpoint_path, filepath)}")
 
 def save_checkpoint_step(model, optimizer, best_val_loss, epoch, step, filepath, hparams: Hparams):
     model_state_dict = model.state_dict()
@@ -63,81 +65,177 @@ def save_checkpoint_step(model, optimizer, best_val_loss, epoch, step, filepath,
     torch.save(checkpoint_dict, os.path.join(hparams.checkpoint_path, filepath))
     print(f"Saved checkpoint at {os.path.join(hparams.checkpoint_path, filepath)}")
 
-def train_worker(rank, world_size, hparams: Hparams):
-    # --- 1. KHỞI TẠO DDP VÀ DATALOADER ---
-    device_id = rank % torch.cuda.device_count()
+def train_worker_chunk_by_chunk(rank, world_size, hparams):
+    # --- 1. Setup Device & DDP ---
     if hparams.ddp_run:
+        device_id = rank % torch.cuda.device_count()
         init_distributed_training(device_id, world_size, hparams)
+    else:
+        device_id = 0 
+        if torch.cuda.is_available():
+            torch.cuda.set_device(device_id)
 
-    # Giả sử get_trainloader_valset trả về loader dùng TextMelCollate
-    train_loader, val_set = get_trainloader_valset(
-        device_id, 
-        world_size, 
-        hparams
-    )
+    # --- 2. Model Setup ---
+    model = Tacotron2(hparams).to(device_id)
+    if hparams.ddp_run:
+        model = DDP(model, device_ids=[device_id])
+    raw_model = model.module if hparams.ddp_run else model
 
-    # Load model bên trong hàm worker
-    model = Tacotron2(hparams)
-    model = model.to(device_id)
-    model = DDP(model, device_ids=[device_id])
-
-    # --- 2. KHỞI TẠO HÀM LOSS VÀ OPTIMIZER ---
-    criterion = Tacotron2Loss().to(device_id) 
+    criterion = Tacotron2Loss().to(device_id)
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
+
+    # --- 3. Load Checkpoint ---
+    global_epoch = 0 
+    start_chunk_index = 0 
+    best_val_loss = float('inf')
+    patience_counter = 0  
+
+    path_to_checkpoint = os.path.join(hparams.checkpoint_path, hparams.name_file_checkpoint)
+    if os.path.exists(path_to_checkpoint):
+        map_loc = f'cuda:{device_id}' if torch.cuda.is_available() else 'cpu'
+        checkpoint = torch.load(path_to_checkpoint, map_location=map_loc)
+        
+        raw_model.load_state_dict(checkpoint['model_state_dict']) #type: ignore
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     
-    print(f"[Rank {rank}] Bắt đầu huấn luyện...")
+        global_epoch = checkpoint.get('epoch', 0)
+        best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+        start_chunk_index = checkpoint.get('chunk_index', 0)
+        # Lưu ý: Nếu muốn resume training mà vẫn giữ trạng thái early stopping cũ thì load lại
+        # còn nếu muốn reset cơ hội cho model thì set về 0.
+        patience_counter = 0 
+        print(f"[Rank {rank}] Resumed: Epoch {global_epoch}, Chunk {start_chunk_index}")
+
+    # --- 4. Load Speaker Embeddings ---
+    # Giả sử hàm này trả về dict
+    speaker_embedding_dict = torch.load(hparams.speaker_embeddings_file)
+    speaker_embedding_dict_val = torch.load(hparams.validation_speaker_embeddings_file)
     
-    for epoch in range(hparams.epochs):
-        model.train()
-        for step, batch in enumerate(train_loader):
+    # Chuẩn bị sẵn Processor (truyền dict vào để không phải load lại nhiều lần)
+    # prepare_text_mel_train = ... (Khởi tạo bên trong get_trainloader_chunk cũng được nhưng truyền dict vào)
+    collate_fn = CollateTextMel(hparams)
+
+    # Load Validation Set (Chỉ Rank 0 cần)
+    val_set = None
+    if rank == 0:
+        print(f"[Rank {rank}] Starting chunk-by-chunk training...")
+        prepare_text_mel_val = PrepareTextMel(hparams, speaker_embedding_dict_val)
+        val_set = get_valloader(hparams, prepare_text_mel_val, collate_fn)
+
+    # --- 5. Training Loop ---
+    # Cờ dừng toàn cục
+    should_stop_global = False
+
+    for epoch in range(global_epoch, hparams.max_epochs):
+        if should_stop_global: break # Thoát vòng lặp Epoch
+
+        if rank == 0:
+            print(f"\n{'='*30} Epoch {epoch} {'='*30}")
+
+        current_start = start_chunk_index if epoch == global_epoch else 0
+        
+        for chunk_idx in range(current_start, len(hparams.dataset_chunks)):
             
-            optimizer.zero_grad()
-
-            # Dùng parse_batch của model để chuẩn bị dữ liệu
-            # Hàm này đã tự chuyển tensor sang GPU
-            model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
-            
-            # Forward pass
-            # model_inputs là tuple: (text_padded, input_lengths, ...)
-            model_outputs = model(model_inputs)
-
-            output_length = model_inputs[3]  # output_lengths
-
-            loss, loss_mel, loss_mel_postnet, loss_gate = criterion(
-                model_outputs, ground_truth, output_length
+            # --- Tạo DataLoader ---
+            # Hàm này phải đảm bảo logic: Rank 0 load cache, Rank > 0 đợi barrier
+            train_loader = get_trainloader_chunk(
+                rank, world_size, hparams, chunk_idx,
+                speaker_embedding_dict, # Truyền dict vào
+                speaker_embedding_dict_val,
+                seed=hparams.seed + epoch
             )
-            
-            # Backward và Optimize
-            loss.backward()
-            optimizer.step()
-            
-            if rank == 0 and step % 1 == 0:
-                print(f"Epoch: {epoch}, Step: {step}, Loss: {loss.item()}")
-                print(f"Mel: {loss_mel.item()}, Postnet: {loss_mel_postnet.item()}, Gate: {loss_gate.item()}")
-        if device_id == 0 and val_set is not None:
-            # Thực hiện đánh giá trên tập validation
-            model.eval()
-            best_val_loss = float('inf')
-            total_val_loss = 0.0
-            with torch.no_grad():
-                for batch in val_set:
-                    model_inputs, ground_truth = model.module.parse_batch(batch)
-                    model_outputs = model(model_inputs)
-                    output_lengths = model_inputs[4]
-                    val_loss, _, _, _ = criterion(
-                        model_outputs, ground_truth, output_lengths
-                    )
-                    total_val_loss += val_loss.item()
-            avg_val_loss = total_val_loss / len(val_set)
-            print(f"[Rank {rank}] Epoch {epoch} Validation Loss: {avg_val_loss}")
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                save_checkpoint(model, optimizer, epoch, step, f"checkpoint_epoch_{epoch}.pt", hparams)
-        if hparams.ddp_run:
-            dist.barrier()  # Đồng bộ hóa các tiến trình sau mỗi epoch
 
-    print(f"[Rank {rank}] Huấn luyện hoàn tất.")
-    dist.destroy_process_group()
+            # --- Training Loop trên Chunk ---
+            model.train()
+            if rank == 0:
+                pbar = tqdm(train_loader, desc=f"Ep {epoch}-Ck {chunk_idx}", unit="batch")
+            else:
+                pbar = train_loader
+
+            for i, batch in enumerate(pbar):
+                optimizer.zero_grad()
+                model_inputs, ground_truth = raw_model.parse_batch(batch, rank) #type: ignore
+                model_outputs = model(model_inputs)
+                
+                output_length = model_inputs[3]
+                loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
+                
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.grad_clip_thresh)
+                optimizer.step()
+                
+                if rank == 0:
+                    pbar.set_postfix({'Loss': f"{loss.item():.4f}"}) #type: ignore
+
+            # --- KẾT THÚC 1 CHUNK: VALIDATION ---
+            
+            # [FIX 1] Khởi tạo stop_signal cho TẤT CẢ các rank
+            stop_signal = torch.tensor(0).to(device_id)
+
+            # Đồng bộ trước khi validate để chắc chắn Rank 0 không chạy trước
+            if hparams.ddp_run: dist.barrier()
+
+            if rank == 0 and val_set is not None:
+                model.eval()
+                total_val_loss = 0.0
+                with torch.no_grad():
+                    print(f"[Rank {rank}] Validating after chunk {chunk_idx}...")
+                    for val_batch in val_set:
+                        v_inputs, v_truth = raw_model.parse_batch(val_batch, rank) #type: ignore
+                        v_outputs = model(v_inputs)
+                        v_out_len = v_inputs[3]
+                        v_loss, _, _, _ = criterion(v_outputs, v_truth, v_out_len)
+                        total_val_loss += v_loss.item()
+                
+                avg_val_loss = total_val_loss / len(val_set)
+                print(f"[Rank {rank}] Ep {epoch}-Ck {chunk_idx} | Val Loss: {avg_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
+
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    patience_counter = 0
+                    save_name = f"checkpoint_{epoch}_{chunk_idx}_best.pt"
+                    # Lưu index là chunk_idx + 1 để khi resume sẽ chạy chunk tiếp theo
+                    save_checkpoint_chunk(raw_model, optimizer, epoch, chunk_idx + 1, save_name, hparams)
+                    print(f"Saved NEW BEST model: {save_name}")
+                else:
+                    patience_counter += 1
+                    if patience_counter >= hparams.early_stopping_patience:
+                        print(f"==> EARLY STOPPING TRIGGERED!")
+                        stop_signal = torch.tensor(1).to(device_id) # Set cờ dừng
+            
+            # [FIX 2] Broadcast tín hiệu dừng
+            if hparams.ddp_run:
+                dist.broadcast(stop_signal, src=0)
+            
+            # --- DỌN DẸP CHUNK CACHE ---
+            
+            # [FIX 3] Hủy DataLoader và GC trước khi xóa file
+            # Phải hủy ở tất cả các rank vì rank nào cũng đang giữ file handle
+            if rank == 0: pbar.close() # type: ignore
+            del train_loader
+            gc.collect() 
+
+            # Đợi tất cả nhả file
+            if hparams.ddp_run: dist.barrier()
+
+            # Rank 0 xóa cache trên đĩa
+            if rank == 0:
+                remove_chunk_cache(hparams, chunk_idx)
+
+            # Đợi xóa xong
+            if hparams.ddp_run: dist.barrier()
+
+            # [FIX 4] Kiểm tra tín hiệu dừng để Break
+            if stop_signal.item() == 1:
+                if rank == 0: print("Stopping training loop...")
+                should_stop_global = True # Đánh dấu để thoát vòng lặp Epoch bên ngoài
+                break # Thoát vòng lặp Chunk
+
+        # Reset start_chunk cho epoch sau
+        start_chunk_index = 0
+
+    if hparams.ddp_run:
+        dist.destroy_process_group()
 
 
 def train_worker_by_step(rank, world_size, hparams):
@@ -151,22 +249,19 @@ def train_worker_by_step(rank, world_size, hparams):
             torch.cuda.set_device(device_id)
 
     # --- 2. Model Setup ---
-    model = Tacotron2(hparams).to(device_id)
-    
+    model = Tacotron2(hparams).to(device_id)  
     if hparams.ddp_run:
         model = DDP(model, device_ids=[device_id])
-    
     raw_model = model.module if hparams.ddp_run else model
 
-    # --- 3. Optimizer & Loss ---
     criterion = Tacotron2Loss().to(device_id)
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
 
-    # --- 4. Load Checkpoint ---
+    # --- 3. Load Checkpoint ---
     global_step = 0
     epoch = 0
     best_val_loss = float('inf')
-    patience_counter = 0  # [NEW] Biến đếm cho Early Stopping
+    patience_counter = 0  # Biến đếm cho Early Stopping
 
     path_to_checkpoint = os.path.join(hparams.checkpoint_path, hparams.name_file_checkpoint)
     if os.path.exists(path_to_checkpoint):
@@ -181,22 +276,21 @@ def train_worker_by_step(rank, world_size, hparams):
         epoch = checkpoint.get('epoch', 0)
         # Reset patience khi resume training để tránh dừng ngay lập tức
         patience_counter = 0 
-        
         print(f"[Rank {rank}] Resumed from step {global_step}, Epoch {epoch}.")
 
-    # --- 5. Data ---
+    # --- 4. Data ---
     train_loader, val_set = get_trainloader_valset(
         device_id, world_size, hparams, hparams.seed + epoch + 1
     )
     train_data_iter = iter(train_loader)
 
-    # --- 6. Progress Bar ---
+    # --- 5. Progress Bar ---
     progress_bar = None
     step_training = hparams.max_step_training + global_step
     if rank == 0:
         progress_bar = tqdm(initial=global_step, total=step_training, desc="Training", unit="step", position=0)
 
-    # --- 7. Training Loop ---
+    # --- 6. Training Loop ---
     model.train()
     
     # Cờ để báo hiệu dừng toàn bộ hệ thống (Early Stopping Flag)
@@ -261,7 +355,6 @@ def train_worker_by_step(rank, world_size, hparams):
             if hparams.ddp_run:
                 dist.barrier()
 
-            val_loss_tensor = torch.tensor(0.0).to(device_id)
             stop_signal = torch.tensor(0).to(device_id) # 0: Continue, 1: Stop
 
             # Chỉ Rank 0 thực hiện tính toán Validation
@@ -279,7 +372,6 @@ def train_worker_by_step(rank, world_size, hparams):
                     val_progress.close()
                 
                 avg_val_loss = total_val_loss / len(val_set)
-                val_loss_tensor = torch.tensor(avg_val_loss).to(device_id)
                 print(f"\n[Rank {rank}] Step {global_step} | Val Loss: {avg_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
 
                 # ===> [FEATURE 2] LOGIC EARLY STOPPING <===
@@ -319,291 +411,3 @@ def train_worker_by_step(rank, world_size, hparams):
     print(f"[Rank {rank}] Training process finished.")
     if hparams.ddp_run:
         dist.destroy_process_group()
-
-
-# def train_worker_by_step(rank, world_size, hparams):
-#     """
-#     Hàm worker huấn luyện chính.
-#     Hỗ trợ cả chế độ DDP (Nhiều GPU) và Single-GPU.
-#     """
-    
-#     # --- 1. Cấu hình Device & DDP ---
-#     if hparams.ddp_run:
-#         # Chế độ đa GPU
-#         device_id = rank % torch.cuda.device_count()
-#         init_distributed_training(device_id, world_size, hparams)
-#     else:
-#         # Chế độ đơn GPU
-#         device_id = 0 
-#         if torch.cuda.is_available():
-#             torch.cuda.set_device(device_id)
-#         print(f"[Info] Running in Single-GPU mode on device {device_id}")
-
-#     # --- 2. Khởi tạo Model ---
-#     model = Tacotron2(hparams)
-#     model = model.to(device_id)
-
-#     # Chỉ bọc DDP nếu đang chạy chế độ DDP
-#     if hparams.ddp_run:
-#         model = DDP(model, device_ids=[device_id])
-
-#     # [QUAN TRỌNG] Tạo biến tham chiếu đến model gốc
-#     # Dùng biến này để gọi load_state_dict hoặc các hàm custom như parse_batch
-#     # Tránh lỗi "AttributeError: 'Tacotron2' object has no attribute 'module'" khi chạy đơn GPU
-#     raw_model = model.module if hparams.ddp_run else model
-
-#     # --- 3. Loss & Optimizer ---
-#     criterion = Tacotron2Loss().to(device_id)
-#     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
-
-#     print(f"[Rank {rank}] Starting training setup...")
-
-#     # --- 4. Load Checkpoint ---
-#     global_step = 0
-#     epoch = 0
-#     best_val_loss = float('inf')
-
-#     path_to_checkpoint = os.path.join(hparams.checkpoint_path, hparams.name_file_checkpoint)
-#     if os.path.exists(path_to_checkpoint):
-#         # Map location để tránh load nhầm GPU
-#         map_loc = f'cuda:{device_id}' if torch.cuda.is_available() else 'cpu'
-#         checkpoint = torch.load(path_to_checkpoint, map_location=map_loc)
-        
-#         # Dùng raw_model để load weights
-#         raw_model.load_state_dict(checkpoint['model_state_dict']) #type: ignore
-#         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        
-#         global_step = checkpoint['step']
-#         best_val_loss = checkpoint.get('best_val_loss', float('inf'))
-#         epoch = checkpoint.get('epoch', 0)
-        
-#         print(f"[Rank {rank}] Loaded checkpoint from {hparams.checkpoint_path} at step {global_step}.")
-
-#     # --- 5. DataLoader ---
-#     train_loader, val_set = get_trainloader_valset(
-#         device_id, 
-#         world_size, 
-#         hparams,
-#         hparams.seed + epoch + 1
-#     )
-#     train_data_iter = iter(train_loader)
-
-#     # --- 6. Progress Bar (Chỉ hiện ở Rank 0) ---
-#     progress_bar = None
-#     step_training = hparams.max_step_training + global_step
-#     if rank == 0:
-#         progress_bar = tqdm(initial=global_step, total=step_training, desc="Training", unit="step", position=0)
-
-#     # --- 7. Training Loop ---
-#     model.train()
-    
-#     while global_step < step_training:
-#         # Lấy batch dữ liệu tiếp theo
-#         try:
-#             batch = next(train_data_iter)
-#         except StopIteration:
-#             print(f"[Rank {rank}] Epoch {epoch} finished. Reinitializing iterator...")
-#             epoch += 1
-#             # Nếu cần shuffle lại sampler trong DDP, bạn nên set_epoch ở đây (nếu dùng DistributedSampler)
-#             # if hparams.ddp_run and hasattr(train_loader.sampler, 'set_epoch'):
-#             #     train_loader.sampler.set_epoch(epoch)
-            
-#             train_data_iter = iter(train_loader)
-#             batch = next(train_data_iter)
-
-#         # --- Forward & Backward ---
-#         optimizer.zero_grad()
-        
-#         # Dùng raw_model để gọi hàm custom parse_batch
-#         # (Hàm này thường xử lý việc chuyển dữ liệu sang GPU)
-#         model_inputs, ground_truth = raw_model.parse_batch(batch) #type: ignore
-        
-#         # Forward pass: Dùng 'model' (có wrapper DDP) để đảm bảo đồng bộ gradient
-#         model_outputs = model(model_inputs)
-        
-#         output_length = model_inputs[3]
-#         loss, loss_mel, loss_mel_postnet, loss_gate = criterion(
-#             model_outputs, ground_truth, output_length
-#         )
-        
-#         loss.backward()
-        
-#         # (Optional) Gradient Clipping
-#         # torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.grad_clip_thresh)
-        
-#         optimizer.step()
-
-#         global_step += 1
-
-#         # --- Logging (Rank 0) ---
-#         if rank == 0:
-#             progress_bar.update(1) # type: ignore
-#             progress_bar.set_postfix({ # type: ignore
-#                 'Loss': f"{loss.item():.4f}",
-#                 'Mel': f"{loss_mel.item():.4f}",
-#                 'Post': f"{loss_mel_postnet.item():.4f}",
-#                 'Gate': f"{loss_gate.item():.4f}"
-#             })
-
-#         # --- Validation & Save Checkpoint ---
-#         if global_step % hparams.val_interval == 0:
-#             # Chỉ chạy validation ở rank 0 để tránh trùng lặp và tắc nghẽn
-#             if rank == 0 and val_set is not None:
-#                 model.eval()
-#                 total_val_loss = 0.0
-                
-#                 # Tắt gradient để tiết kiệm bộ nhớ
-#                 with torch.no_grad():
-#                     val_progress = tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1)
-                    
-#                     for val_batch in val_progress:
-#                         # Dùng raw_model để parse batch
-#                         v_inputs, v_truth = raw_model.parse_batch(val_batch) #type: ignore
-                        
-#                         # Forward pass validation
-#                         v_outputs = model(v_inputs)
-                        
-#                         v_out_len = v_inputs[3]
-#                         val_loss, _, _, _ = criterion(v_outputs, v_truth, v_out_len)
-                        
-#                         total_val_loss += val_loss.item()
-#                         val_progress.set_postfix({'Val Loss': f"{val_loss.item():.4f}"})
-                    
-#                     val_progress.close()
-                
-#                 # Tính trung bình loss
-#                 avg_val_loss = total_val_loss / len(val_set)
-#                 print(f"\n[Rank {rank}] Step {global_step} | Validation Loss: {avg_val_loss:.5f}")
-                
-#                 # Lưu checkpoint nếu tốt hơn
-#                 if avg_val_loss < best_val_loss:
-#                     best_val_loss = avg_val_loss
-#                     save_name = f"checkpoint_step_{global_step}.pt"
-#                     # Lưu ý: Truyền raw_model vào hàm save để không lưu wrapper DDP
-#                     save_checkpoint_step(raw_model, optimizer, best_val_loss, epoch, global_step, save_name, hparams)
-#                     print(f"Saved best model to {save_name}")
-
-#                 # Quay lại chế độ train
-#                 model.train()
-
-#     # --- 8. Cleanup ---
-#     if rank == 0:
-#         progress_bar.close() # type: ignore
-    
-#     print(f"[Rank {rank}] Training complete.")
-    
-#     # Chỉ destroy nếu đã init
-#     if hparams.ddp_run:
-#         dist.destroy_process_group()
-
-
-# def train_worker_by_step(rank, world_size, hparams: Hparams):
-#     """
-#     """
-#     device_id = rank % torch.cuda.device_count()
-#     if hparams.ddp_run:
-#         init_distributed_training(device_id, world_size, hparams) 
-
-#     # Load model bên trong hàm worker
-#     model = Tacotron2(hparams)
-#     model = model.to(device_id) 
-#     model = DDP(model, device_ids=[device_id])
-
-#     # Khởi tạo hàm loss và optimizer
-#     criterion = Tacotron2Loss().to(device_id) 
-#     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
-
-#     print(f"[Rank {rank}] Starting training...")
-
-#     # Thiết lập biến đếm bước và best_val_loss
-#     global_step = 0
-#     epoch = 0
-#     best_val_loss = float('inf')
-
-#     # Load từ checkpoint nếu có
-#     path_to_checkpoint = os.path.join(hparams.checkpoint_path, hparams.name_file_checkpoint)
-#     if os.path.exists(path_to_checkpoint):
-#         checkpoint = torch.load(path_to_checkpoint, map_location=f'cuda:{device_id}')
-#         model.module.load_state_dict(checkpoint['model_state_dict'])
-#         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-#         global_step = checkpoint['step']
-#         best_val_loss = checkpoint.get('best_val_loss', float('inf'))
-#         epoch = checkpoint.get('epoch', 0)
-#         print(f"[Rank {rank}] Loaded checkpoint from {hparams.checkpoint_path} at step {global_step}.")
-
-#     # Lấy DataLoader và Validation set
-#     train_loader, val_set = get_trainloader_valset(
-#         device_id, 
-#         world_size, 
-#         hparams,
-#         hparams.seed + epoch + 1
-#     )
-#     # Tạo iterator từ DataLoader
-#     train_data_iter = iter(train_loader) 
-
-#     # Thiết lập thanh tiến trình nếu là rank 0
-#     progress_bar = None
-#     step_training = hparams.max_step_training + global_step
-#     if rank == 0:
-#         progress_bar = tqdm(initial=global_step, total=step_training, desc="Training", unit="step", position=0)
-
-#     # Bắt đầu vòng lặp huấn luyện
-#     model.train()
-#     while global_step < step_training:
-#         try:
-#             batch = next(train_data_iter) # type: ignore
-#         except StopIteration:
-#             print("[Info] Reinitializing train data iterator... ")
-#             train_data_iter = iter(train_loader)
-#             batch = next(train_data_iter) # type: ignore
-#             epoch += 1
-
-#         model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
-#         model_outputs = model(model_inputs)
-#         output_length = model_inputs[3]  # output_lengths
-#         loss, loss_mel, loss_mel_postnet, loss_gate = criterion(
-#             model_outputs, ground_truth, output_length
-#         )
-#         loss.backward()
-#         optimizer.step()
-#         optimizer.zero_grad()
-
-#         global_step += 1
-
-#         if rank == 0:
-#             progress_bar.update(1) # type: ignore
-#             progress_bar.set_postfix({ # type: ignore
-#                 'Loss': f"{loss.item():.4f}",
-#                 'Mel': f"{loss_mel.item():.4f}",
-#                 'Postnet': f"{loss_mel_postnet.item():.4f}",
-#                 'Gate': f"{loss_gate.item():.4f}"
-#             })
-
-#         # Vào trạng thái đánh giá và lưu checkpoint theo interval
-#         if global_step % hparams.val_interval == 0:
-#             if rank == 0 and val_set is not None:
-#                 model.eval()
-#                 total_val_loss = 0.0
-#                 with torch.no_grad():
-#                     val_progress = tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1)
-#                     for batch in val_progress:
-#                         model_inputs, ground_truth = model.module.parse_batch(batch, rank=device_id)
-#                         model_outputs = model(model_inputs)
-#                         output_lengths = model_inputs[3]
-#                         val_loss, _, _, _ = criterion(
-#                             model_outputs, ground_truth, output_lengths
-#                         )
-#                         total_val_loss += val_loss.item()
-#                         val_progress.set_postfix({'Val Loss': f"{val_loss.item():.4f}"})
-#                     val_progress.close()
-#                 avg_val_loss = total_val_loss / len(val_set)
-#                 print(f"\n[Rank {rank}] Step {global_step} Validation Loss: {avg_val_loss}")
-#                 if avg_val_loss < best_val_loss:
-#                     best_val_loss = avg_val_loss
-#                     save_checkpoint_step(model, optimizer, best_val_loss, epoch, global_step, f"checkpoint_step_{global_step}.pt", hparams)
-#                 model.train()
-#     if rank == 0:
-#         progress_bar.close()  # type: ignore
-#     print(f"[Rank {rank}] Training complete.")
-#     if hparams.ddp_run:
-#         dist.destroy_process_group()

@@ -4,37 +4,151 @@ from processing import PrepareTextMel, CollateTextMel
 from config import Hparams
 from huggingface_hub import list_repo_files, hf_hub_url
 import torch
-
-
-def get_parquet_file_list(hparams: Hparams):
-    """Lấy danh sách URL đầy đủ của các file parquet trong split 'train'."""
-    all_files = list_repo_files(
-        repo_id=hparams.dataset_name,
-        repo_type='dataset',
-    )
-    train_files = [f for f in all_files if f.startswith(f'{hparams.hf_parquets_folder}/train-') and f.endswith('.parquet')]
-    file_urls = [
-        hf_hub_url(
-            repo_id=hparams.dataset_name,
-            filename=f,
-            repo_type='dataset'
-        ) for f in train_files
-    ]
-    print(f"Found {len(file_urls)} parquet files for training dataset.")
-    return file_urls
+from pathlib import Path
+import torch.distributed as dist
 
 def get_valset(hparams: Hparams):
-    """Lấy URL đầy đủ của file parquet validation."""
-    if hparams.parquet_valid_file is None:
-        raise ValueError("Parquet valid file must be not be None for validation dataset.")
-    
-    val_dict = load_dataset(
+    """Tải validation set từ file parquet đã lưu sẵn."""
+    if hparams.parquet_valid_file is not None:
+        # Tải từ file parquet đã lưu sẵn
+        val_dict = load_dataset(
             'parquet', 
             data_files={"validation": hparams.parquet_valid_file},
         )
-    val_ds = val_dict["validation"] # type: ignore
-    print("Validation dataset loaded from parquet file.")
+        val_ds = val_dict["validation"] # type: ignore
+    else:
+        raise ValueError("Parquet valid file must be not be None for validation dataset.")
     return val_ds
+
+def get_valloader(hparams: Hparams, prepare_text_mel_val, collate_fn):
+    """Tải DataLoader cho validation set."""
+    val_ds = get_valset(hparams)
+    
+    processed_val_ds = val_ds.map( # type: ignore
+        prepare_text_mel_val, 
+        batched=True,
+        batch_size=1000
+    )
+    
+    valloader = DataLoader(
+        processed_val_ds, # type: ignore
+        batch_size=hparams.batch_size,
+        collate_fn=collate_fn,
+        num_workers=2,
+        pin_memory=True,
+        shuffle=False # Validation không cần shuffle
+    )
+    return valloader
+
+def load_speaker_embeddings(hparams: Hparams):
+    """Tải speaker embeddings từ file đã lưu sẵn."""
+    try: 
+        if hparams.speaker_embeddings_file is None or hparams.validation_speaker_embeddings_file is None:
+            raise ValueError("Speaker embeddings file path must be provided in hparams.")
+        speaker_embedding_dict = torch.load(hparams.speaker_embeddings_file)
+        speaker_embedding_dict_val = torch.load(hparams.validation_speaker_embeddings_file)
+    except Exception as e:
+        raise RuntimeError(f"Error loading speaker embeddings: {e}")
+    return speaker_embedding_dict, speaker_embedding_dict_val
+
+def load_dataset_chunks(rank, hparams: Hparams, index: int):
+    """
+    Tải một chunk dataset.
+    Tối ưu DDP: Rank 0 tải và ghi cache trước, các Rank khác đợi và dùng lại cache.
+    """
+    if index < 0 or index >= len(hparams.dataset_chunks):
+        raise IndexError("Index out of range for dataset chunks.")
+    
+    file_pattern = str(Path(hparams.dataset_chunks[index]) / '*.parquet')
+    chunk_cache_dir = str(Path(hparams.cache_chunk_dir) / f"chunk_{index}")
+    
+    dataset = None
+
+    # --- Rank 0 làm việc (Tạo Cache) ---
+    if rank == 0:
+        print(f"[Rank {rank}] Generating cache for chunk {index}...")
+        dataset = load_dataset(
+            'parquet', 
+            data_files={'train': file_pattern},
+            cache_dir=chunk_cache_dir,
+            split='train'
+        )
+    
+    # --- Đồng bộ hóa (Chờ Rank 0 làm xong) ---
+    if hparams.ddp_run:
+        dist.barrier()
+        
+    # --- Các Rank còn lại load (Dùng lại Cache) ---
+    if rank != 0:
+        print(f"[Rank {rank}] Loading cached chunk {index}...")
+        # load_dataset sẽ tự phát hiện và load cực nhanh (không tính toán lại)
+        dataset = load_dataset(
+            'parquet', 
+            data_files={'train': file_pattern},
+            cache_dir=chunk_cache_dir,
+            split='train'
+        )
+        
+    print(f"[Rank {rank}] Dataset chunk {index} ready. Size: {len(dataset)}") # type: ignore
+    return dataset
+
+def remove_chunk_cache(hparams: Hparams, index: int):
+    """Xóa cache của chunk dataset đã load."""
+    chunk_cache_dir = Path(hparams.cache_chunk_dir) / f"chunk_{index}"
+    if chunk_cache_dir.exists() and chunk_cache_dir.is_dir():
+        for item in chunk_cache_dir.iterdir():
+            if item.is_file():
+                item.unlink()
+            elif item.is_dir():
+                import shutil
+                shutil.rmtree(item)
+        chunk_cache_dir.rmdir()
+        print(f"Removed cache for chunk {index}.")
+    else:
+        print(f"No cache found for chunk {index} to remove.")
+
+def get_trainloader_chunk(
+    rank, 
+    world_size, 
+    hparams: Hparams, 
+    index: int, 
+    prepare_text_mel_train,
+    collate_fn,
+    seed=None
+):
+    seed = hparams.seed if seed is None else seed
+
+    # --- 1. XỬ LÝ TRAINING CHUNK ---
+    # Load dataset (Map-style Arrow)
+    dataset_chunk = load_dataset_chunks(rank, hparams, index)
+    
+    # Global Shuffle: Xáo trộn TRƯỚC KHI chia cho các GPU
+    # Cần seed giống nhau ở mọi rank để đảm bảo đồng bộ
+    if hparams.shuffle:
+        dataset_chunk = dataset_chunk.shuffle(seed=seed) # type: ignore
+    
+    # Manual Sharding
+    sharded_ds = dataset_chunk.shard(num_shards=world_size, index=rank) # type: ignore
+    
+    # Map xử lý
+    processed_ds = sharded_ds.map(
+        prepare_text_mel_train,
+        batched=True,
+        batch_size=1000,
+    )
+    
+    # Tạo DataLoader
+    trainloader = DataLoader(
+        processed_ds, # type: ignore
+        batch_size=hparams.batch_size,
+        shuffle=True,        # Local shuffle cho từng batch trong GPU
+        num_workers=2,       # Tăng lên 2 vì đây không phải streaming
+        pin_memory=True,     # Tốt cho GPU training
+        collate_fn=collate_fn,
+        persistent_workers=True # Giúp giữ worker sống giữa các epoch nhỏ
+    )
+    print(f"[Rank {rank}] DataLoader for chunk {index} created.")
+    return trainloader
 
 
 # === HÀM TẠO DATALOADER ===
@@ -48,13 +162,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams, seed=None):
     
     # --- 0. Khởi tạo processors ---
     # Sử dụng đối tượng hparams được truyền vào hàm
-    try: 
-        if hparams.speaker_embeddings_file is None or hparams.validation_speaker_embeddings_file is None:
-            raise ValueError("Speaker embeddings file path must be provided in hparams.")
-        speaker_embedding_dict = torch.load(hparams.speaker_embeddings_file)
-        speaker_embedding_dict_val = torch.load(hparams.validation_speaker_embeddings_file)
-    except Exception as e:
-        raise RuntimeError(f"Error loading speaker embeddings: {e}")
+    speaker_embedding_dict, speaker_embedding_dict_val = load_speaker_embeddings(hparams)
     prepare_text_mel_train = PrepareTextMel(hparams, speaker_embedding_dict)
     prepare_text_mel_val = PrepareTextMel(hparams, speaker_embedding_dict_val) 
     collate_fn = CollateTextMel(hparams)
@@ -93,28 +201,7 @@ def get_trainloader_valset(rank, world_size, hparams: Hparams, seed=None):
     # --- 2. XỬ LÝ VALIDATION (Chỉ Rank 0) ---
     valset = None
     if rank == 0:
-        if hparams.parquet_valid_file is not None:
-            # Tải từ file parquet đã lưu sẵn
-            val_dict = load_dataset(
-                'parquet', 
-                data_files={"validation": hparams.parquet_valid_file},
-            )
-            val_ds = val_dict["validation"] # type: ignore
-        else:
-            raise ValueError("Parquet valid file must be not be None for validation dataset.")
-        
-        processed_val_ds = val_ds.map( # type: ignore
-            prepare_text_mel_val, 
-            batched=True,
-            batch_size=1000
-        )
-        
-        valset = DataLoader(
-            processed_val_ds, # type: ignore
-            batch_size=hparams.batch_size,
-            collate_fn=collate_fn,
-            num_workers=0
-        )
+        valset = get_valloader(hparams, prepare_text_mel_val, collate_fn)
 
     print(f"[Rank {rank}] DataLoader created successfully.")
     return trainloader, valset
