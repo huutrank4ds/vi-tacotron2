@@ -45,9 +45,9 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
     Hàm xử lý batch lazy: Tính Mel Spectrogram ngay trên GPU.
     """
     # 1. Load dữ liệu lên GPU
-    text_padded = batch['text_inputs'].to(device).long()
-    input_lengths = batch['text_lengths'].to(device).long()
-    speaker_embeddings = batch['speaker_embeddings'].to(device).float()
+    text_padded = to_gpu(batch['text_inputs'], device).long()
+    input_lengths = to_gpu(batch['text_lengths'], device).long()
+    speaker_embeddings = to_gpu(batch['speaker_embeddings'], device).float()
     
     # 2. Xử lý Audio (Waveform -> Mel)
     raw_audio_list = batch['raw_audio'] # List of 1D Tensors
@@ -56,12 +56,13 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
     mels = torch.log(torch.clamp(mels, min=1e-5)) 
     wav_lengths = torch.tensor([x.shape[0] for x in raw_audio_list], device=device)
     mel_lengths = 1 + (wav_lengths // hparams.hop_length)
+    mel_lengths = to_gpu(mel_lengths, device).long()
     
     # 3. Tạo Gate Target (Stop Token)
     # Tạo matrix toàn số 0: [Batch, Max_Mel_Len]
     max_mel_len = mels.shape[2]
     gate_padded = torch.zeros(mels.shape[0], max_mel_len, device=device)
-    
+
     # Đánh dấu 1 ở vị trí kết thúc
     for i, l in enumerate(mel_lengths):
         # Trừ 1 vì index bắt đầu từ 0. 
@@ -69,6 +70,9 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
         end_idx = min(l - 1, max_mel_len - 1)
         gate_padded[i, end_idx:] = 1 # Mask từ điểm dừng đến hết (padding cũng là 1 để model học dừng hẳn)
 
+    mels = to_gpu(mels, device).float()
+    gate_padded = to_gpu(gate_padded, device).float()
+    
     return (
         (text_padded, input_lengths, mels, mel_lengths, speaker_embeddings),
         (mels, gate_padded)
