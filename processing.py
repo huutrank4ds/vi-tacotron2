@@ -61,21 +61,26 @@ class PrepareTextMel:
 
     # --- Các Method xử lý Audio ---
 
-    def audio_to_mel(self, audio_array, original_sr):
+    def resample_audio(self, audio_array, original_sr):
         """
-        Chuyển đổi waveform thành log-mel spectrogram.
+        Resample audio từ original_sr về target_sr.
         """
-        # 1. Chuyển sang tensor
         audio_tensor = torch.tensor(audio_array, dtype=torch.float32)
-        
-        # 2. Resample nếu cần
-        target_sr = self.hparams.target_sr 
+        target_sr = self.hparams.target_sr
         if original_sr != target_sr:
             if original_sr not in self.resampler_cache:
                 self.resampler_cache[original_sr] = torchaudio.transforms.Resample(
                     original_sr, target_sr
                 )
             audio_tensor = self.resampler_cache[original_sr](audio_tensor)
+        return audio_tensor
+
+    def audio_to_mel(self, audio_array, original_sr):
+        """
+        Chuyển đổi waveform thành log-mel spectrogram.
+        """
+        # 1. Resample nếu cần
+        audio_tensor = self.resample_audio(audio_array, original_sr)
         
         # 3. Tính Mel Spectrogram
         mel = self.mel_transform(audio_tensor.unsqueeze(0)) 
@@ -107,6 +112,7 @@ class PrepareTextMel:
         mel_lengths_list = []
         speaker_embeddings_list = []
         stop_tokens_list = []
+        audio_list = []
 
         # Lặp qua từng mẫu trong batch (chunk)
         for i in range(len(batch['text'])):
@@ -127,42 +133,45 @@ class PrepareTextMel:
                 speaker_embedding = self.speaker_embedding_dict['mean_embeddings'][speaker_id]
             else:
                 # Fallback: Tạo vector 0 nếu không tìm thấy
-                # Giả sử embedding dim là 192 (hoặc lấy từ hparams)
-                speaker_embedding = torch.zeros(192, dtype=torch.float32)
-                # Hoặc: continue (nếu muốn bỏ qua mẫu không có embedding)
+                speaker_embedding = torch.zeros(self.hparams.speaker_embedding_dim, dtype=torch.float32)
+                raise Warning(f"Speaker '{speaker_name}' not found in speaker_embedding_dict. Using zero vector.")
 
-            # log_mel có shape: [n_mels, n_frames]
-            log_mel = self.audio_to_mel(audio_array, original_sr)
+            # # log_mel có shape: [n_mels, n_frames]
+            # log_mel = self.audio_to_mel(audio_array, original_sr)
 
-            # Reverse về shape [n_frames, n_mels]
-            mel_target = log_mel.T 
-            mel_len = mel_target.shape[0] # Số lượng frame (n_frames)
+            # # Reverse về shape [n_frames, n_mels]
+            # mel_target = log_mel.T 
+            # mel_len = mel_target.shape[0] # Số lượng frame (n_frames)
 
-            # Bỏ qua các mẫu bị lỗi
-            if mel_len == 0 or text_len == 0:
-                continue 
+            # # Bỏ qua các mẫu bị lỗi
+            # if mel_len == 0 or text_len == 0:
+            #     continue 
 
-            # --- 3. Tạo Stop Tokens ---
-            stop_token = [0] * mel_len
-            stop_token[-1] = 1
-            stop_token = torch.FloatTensor(stop_token)
+            # # --- 3. Tạo Stop Tokens ---
+            # stop_token = [0] * mel_len
+            # stop_token[-1] = 1
+            # stop_token = torch.FloatTensor(stop_token)
+
+            audio_tensor = self.resample_audio(audio_array, original_sr)
 
             # --- 4. Thêm vào danh sách ---
             text_inputs_list.append(text_seq)
             text_lengths_list.append(text_len)
-            mel_targets_list.append(mel_target)
-            mel_lengths_list.append(mel_len)
+            # mel_targets_list.append(mel_target)
+            # mel_lengths_list.append(mel_len)
             speaker_embeddings_list.append(speaker_embedding)
-            stop_tokens_list.append(stop_token)
+            # stop_tokens_list.append(stop_token)
+            audio_list.append(audio_tensor)
 
         # Trả về dict các danh sách
         return {
             'text_inputs': text_inputs_list,
             'text_lengths': text_lengths_list,
-            'mel_targets': mel_targets_list,
-            'mel_lengths': mel_lengths_list,
+            # 'mel_targets': mel_targets_list,
+            # 'mel_lengths': mel_lengths_list,
             'speaker_embeddings': speaker_embeddings_list,
-            'stop_tokens': stop_tokens_list
+            # 'stop_tokens': stop_tokens_list
+            'audio': audio_list   
         }
 
 class CollateTextMel:
@@ -194,34 +203,36 @@ class CollateTextMel:
         )
         
         # --- 2. Đệm (Pad) Mel Targets ---
-        all_mel_targets = [torch.as_tensor(item['mel_targets'], dtype=torch.float) for item in batch]
-        mel_padded = pad_sequence(
-            all_mel_targets, 
-            batch_first=True, 
-            padding_value=self.mel_pad_value
-        )
+        # all_mel_targets = [torch.as_tensor(item['mel_targets'], dtype=torch.float) for item in batch]
+        # mel_padded = pad_sequence(
+        #     all_mel_targets, 
+        #     batch_first=True, 
+        #     padding_value=self.mel_pad_value
+        # )
         
         # Chuyển [B, max_mel_len, n_mels] -> [B, n_mels, max_mel_len]
-        mel_padded = mel_padded.transpose(1, 2) 
+        # mel_padded = mel_padded.transpose(1, 2) 
         
         # --- 3. Đệm (Pad) Stop Tokens ---
-        all_stop_tokens = [torch.as_tensor(item['stop_tokens'], dtype=torch.float) for item in batch]
-        stop_padded = pad_sequence(
-            all_stop_tokens, 
-            batch_first=True, 
-            padding_value=self.stop_pad_value
-        )
+        # all_stop_tokens = [torch.as_tensor(item['stop_tokens'], dtype=torch.float) for item in batch]
+        # stop_padded = pad_sequence(
+        #     all_stop_tokens, 
+        #     batch_first=True, 
+        #     padding_value=self.stop_pad_value
+        # )
         
         # --- 4. Lấy độ dài (Lengths) ---
         text_lengths = torch.tensor([item['text_lengths'] for item in batch], dtype=torch.long)
-        mel_lengths = torch.tensor([item['mel_lengths'] for item in batch], dtype=torch.long)
+        # mel_lengths = torch.tensor([item['mel_lengths'] for item in batch], dtype=torch.long)
         speaker_embeddings = torch.stack([torch.as_tensor(item['speaker_embeddings'], dtype=torch.float) for item in batch])
+        audio = torch.stack([torch.as_tensor(item['audio'], dtype=torch.float) for item in batch])
         
         return {
             'text_inputs': text_padded,      # [B, max_text_len]
             'text_lengths': text_lengths,    # [B]
-            'mel_targets': mel_padded,       # [B, n_mels, max_mel_len]
-            'mel_lengths': mel_lengths,      # [B],
+            # 'mel_targets': mel_padded,       # [B, n_mels, max_mel_len]
+            # 'mel_lengths': mel_lengths,      # [B],
             'speaker_embeddings': speaker_embeddings,  # [B, embedding_dim]
-            'stop_tokens': stop_padded,      # [B, max_mel_len]
+            # 'stop_tokens': stop_padded,      # [B, max_mel_len]
+            'audio': audio
         }

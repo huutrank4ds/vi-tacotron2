@@ -12,6 +12,8 @@ import os
 from datetime import timedelta
 import builtins
 from processing import PrepareTextMel, CollateTextMel
+from utils import to_gpu
+from torch.nn.utils.rnn import pad_sequence
 
 # Override print để luôn flush output
 if not hasattr(builtins, "original_print_safe"):
@@ -37,6 +39,40 @@ def init_distributed_training(rank, world_size, hparams: Hparams):
         timeout=timedelta(minutes=60)
     )
     print(f"[Rank {rank}] DDP initialized on GPU {rank % torch.cuda.device_count()}.")
+
+def parse_batch_gpu(batch, device, mel_transform, hparams):
+    """
+    Hàm xử lý batch lazy: Tính Mel Spectrogram ngay trên GPU.
+    """
+    # 1. Load dữ liệu lên GPU
+    text_padded = batch['text_inputs'].to(device).long()
+    input_lengths = batch['text_lengths'].to(device).long()
+    speaker_embeddings = batch['speaker_embeddings'].to(device).float()
+    
+    # 2. Xử lý Audio (Waveform -> Mel)
+    raw_audio_list = batch['raw_audio'] # List of 1D Tensors
+    wav_padded = pad_sequence(raw_audio_list, batch_first=True, padding_value=0).to(device).float()
+    mels = mel_transform(wav_padded)  # [B, n_mels, T]
+    mels = torch.log(torch.clamp(mels, min=1e-5)) 
+    wav_lengths = torch.tensor([x.shape[0] for x in raw_audio_list], device=device)
+    mel_lengths = 1 + (wav_lengths // hparams.hop_length)
+    
+    # 3. Tạo Gate Target (Stop Token)
+    # Tạo matrix toàn số 0: [Batch, Max_Mel_Len]
+    max_mel_len = mels.shape[2]
+    gate_padded = torch.zeros(mels.shape[0], max_mel_len, device=device)
+    
+    # Đánh dấu 1 ở vị trí kết thúc
+    for i, l in enumerate(mel_lengths):
+        # Trừ 1 vì index bắt đầu từ 0. 
+        # Cần clamp để không vượt quá kích thước do làm tròn
+        end_idx = min(l - 1, max_mel_len - 1)
+        gate_padded[i, end_idx:] = 1 # Mask từ điểm dừng đến hết (padding cũng là 1 để model học dừng hẳn)
+
+    return (
+        (text_padded, input_lengths, mels, mel_lengths, speaker_embeddings),
+        (mels, gate_padded)
+    )
 
 def save_checkpoint_chunk(model, optimizer, epoch, chunk_index, filepath, hparams: Hparams):
     model_state_dict = model.state_dict()
@@ -153,7 +189,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
             for i, batch in enumerate(pbar):
                 optimizer.zero_grad()
-                model_inputs, ground_truth = raw_model.parse_batch(batch, rank) #type: ignore
+                model_inputs, ground_truth = parse_batch_gpu(batch, rank, prepare_text_mel_train.get_mel_transform(), hparams) #type: ignore
                 model_outputs = model(model_inputs)
                 
                 output_length = model_inputs[3]
@@ -179,7 +215,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 with torch.no_grad():
                     print(f"[Rank {rank}] Validating after chunk {chunk_idx}...")
                     for val_batch in val_set:
-                        v_inputs, v_truth = raw_model.parse_batch(val_batch, rank) #type: ignore
+                        v_inputs, v_truth = parse_batch_gpu(val_batch, rank, prepare_text_mel_val.get_mel_transform(), hparams) #type: ignore
                         v_outputs = model(v_inputs)
                         v_out_len = v_inputs[3]
                         v_loss, _, _, _ = criterion(v_outputs, v_truth, v_out_len)

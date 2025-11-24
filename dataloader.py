@@ -129,12 +129,14 @@ def get_trainloader_chunk(
     
     # Manual Sharding
     sharded_ds = dataset_chunk.shard(num_shards=world_size, index=rank) # type: ignore
-    
+
     # Map xử lý
     processed_ds = sharded_ds.map(
         prepare_text_mel_train,
         batched=True,
+        load_from_cache_file=False, #type: ignore
         batch_size=1000,
+        num_proc=hparams.num_cpu #type: ignore
     )
     
     # Tạo DataLoader
@@ -142,7 +144,7 @@ def get_trainloader_chunk(
         processed_ds, # type: ignore
         batch_size=hparams.batch_size,
         shuffle=True,        # Local shuffle cho từng batch trong GPU
-        num_workers=2,       # Tăng lên 2 vì đây không phải streaming
+        num_workers=hparams.num_cpu,  # Số worker cho DataLoader
         pin_memory=True,     # Tốt cho GPU training
         collate_fn=collate_fn,
         persistent_workers=True # Giúp giữ worker sống giữa các epoch nhỏ

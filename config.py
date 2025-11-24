@@ -29,7 +29,7 @@ class Hparams:
     mask_padding: bool = True
     fp16_run: bool = False
     n_frames_per_step: int = 1 # Rất quan trọng cho Decoder
-    
+    num_cpu : int = 4  # Số worker cho DataLoader
     
     # Text
     symbols: List[str] = field(default_factory=lambda: SYMBOLS_LIST)
