@@ -128,13 +128,9 @@ class PrepareTextMel:
             
             speaker_name = batch['speaker'][i]
             speaker_id = self._speaker_to_id.get(speaker_name, None)
-            # 2. Lấy embedding & Xử lý trường hợp thiếu
-            if speaker_id is not None and speaker_id in self.speaker_embedding_dict:
-                speaker_embedding = self.speaker_embedding_dict['mean_embeddings'][speaker_id]
-            else:
-                # Fallback: Tạo vector 0 nếu không tìm thấy
-                speaker_embedding = torch.zeros(self.hparams.speaker_embedding_dim, dtype=torch.float32)
-                raise Warning(f"Speaker '{speaker_name}' not found in speaker_embedding_dict. Using zero vector.")
+            if speaker_id is None:
+                raise ValueError(f"Speaker '{speaker_name}' not found in speaker embedding dictionary.")
+            speaker_embedding = self.speaker_embedding_dict['embeddings'][speaker_id]
 
             # # log_mel có shape: [n_mels, n_frames]
             # log_mel = self.audio_to_mel(audio_array, original_sr)
