@@ -130,7 +130,7 @@ class PrepareTextMel:
             speaker_id = self._speaker_to_id.get(speaker_name, None)
             if speaker_id is None:
                 raise ValueError(f"Speaker '{speaker_name}' not found in speaker embedding dictionary.")
-            speaker_embedding = self.speaker_embedding_dict['embeddings'][speaker_id]
+            speaker_embedding = self.speaker_embedding_dict['mean_embeddings'][speaker_id]
 
             # # log_mel có shape: [n_mels, n_frames]
             # log_mel = self.audio_to_mel(audio_array, original_sr)
