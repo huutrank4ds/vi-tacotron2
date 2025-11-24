@@ -129,7 +129,7 @@ class PrepareTextMel:
             speaker_name = batch['speaker'][i]
             speaker_id = self._speaker_to_id.get(speaker_name, None)
             # 2. Lấy embedding & Xử lý trường hợp thiếu
-            if speaker_name in self.speaker_embedding_dict:
+            if speaker_id is not None and speaker_id in self.speaker_embedding_dict:
                 speaker_embedding = self.speaker_embedding_dict['mean_embeddings'][speaker_id]
             else:
                 # Fallback: Tạo vector 0 nếu không tìm thấy
