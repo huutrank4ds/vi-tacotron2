@@ -41,38 +41,40 @@ def init_distributed_training(rank, world_size, hparams: Hparams):
     print(f"[Rank {rank}] DDP initialized on GPU {rank % torch.cuda.device_count()}.")
 
 def parse_batch_gpu(batch, device, mel_transform, hparams):
-    """
-    Hàm xử lý batch lazy: Tính Mel Spectrogram ngay trên GPU.
-    """
-    # 1. Load dữ liệu lên GPU
+    # Helper chuyển GPU (dùng hàm của bạn)
+    # Lưu ý: device ở đây chính là rank (int) hoặc device object đều được
+    
+    # 1. Load dữ liệu
     text_padded = to_gpu(batch['text_inputs'], device).long()
     input_lengths = to_gpu(batch['text_lengths'], device).long()
     speaker_embeddings = to_gpu(batch['speaker_embeddings'], device).float()
     
-    # 2. Xử lý Audio (Waveform -> Mel)
-    raw_audio_list = batch['raw_audio'] # List of 1D Tensors
-    wav_padded = pad_sequence(raw_audio_list, batch_first=True, padding_value=0).to(device).float()
-    mels = mel_transform(wav_padded)  # [B, n_mels, T]
+    # 2. Xử lý Audio
+    # batch['audio'] là list các tensor, cần chuyển từng cái hoặc pad xong mới chuyển
+    # Tốt nhất là list comprehension rồi pad
+    raw_audio_list = [to_gpu(x, device) for x in batch['audio']]
+    
+    # Pad waveform với giá trị 0 (Silence)
+    wav_padded = pad_sequence(raw_audio_list, batch_first=True, padding_value=0.0)
+    
+    # Tính Mel: Output shape [Batch, n_mels, Time]
+    # mel_transform đã nằm trên GPU nên bước này cực nhanh
+    mels = mel_transform(wav_padded)
     mels = torch.log(torch.clamp(mels, min=1e-5)) 
-    wav_lengths = torch.tensor([x.shape[0] for x in raw_audio_list], device=device)
+    
+    # Tính độ dài thực tế (Dựa trên wav lengths gốc)
+    wav_lengths = torch.tensor([x.shape[0] for x in raw_audio_list], device=device, dtype=torch.long)
     mel_lengths = 1 + (wav_lengths // hparams.hop_length)
-    mel_lengths = to_gpu(mel_lengths, device).long()
     
     # 3. Tạo Gate Target (Stop Token)
-    # Tạo matrix toàn số 0: [Batch, Max_Mel_Len]
     max_mel_len = mels.shape[2]
     gate_padded = torch.zeros(mels.shape[0], max_mel_len, device=device)
 
     # Đánh dấu 1 ở vị trí kết thúc
     for i, l in enumerate(mel_lengths):
-        # Trừ 1 vì index bắt đầu từ 0. 
-        # Cần clamp để không vượt quá kích thước do làm tròn
         end_idx = min(l - 1, max_mel_len - 1)
-        gate_padded[i, end_idx:] = 1 # Mask từ điểm dừng đến hết (padding cũng là 1 để model học dừng hẳn)
+        gate_padded[i, end_idx:] = 1.0 
 
-    mels = to_gpu(mels, device).float()
-    gate_padded = to_gpu(gate_padded, device).float()
-    
     return (
         (text_padded, input_lengths, mels, mel_lengths, speaker_embeddings),
         (mels, gate_padded)
@@ -141,20 +143,22 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
         global_epoch = checkpoint.get('epoch', 0)
         best_val_loss = checkpoint.get('best_val_loss', float('inf'))
         start_chunk_index = checkpoint.get('chunk_index', 0)
-        # Lưu ý: Nếu muốn resume training mà vẫn giữ trạng thái early stopping cũ thì load lại
-        # còn nếu muốn reset cơ hội cho model thì set về 0.
         patience_counter = 0 
         print(f"[Rank {rank}] Resumed: Epoch {global_epoch}, Chunk {start_chunk_index}")
 
-    # --- 4. Load Speaker Embeddings ---
-    # Giả sử hàm này trả về dict
-    speaker_embedding_dict , speaker_embedding_dict_val = load_speaker_embeddings(hparams)
+    # --- 4. Prepare Global Resources ---
+    # Load Embeddings
+    speaker_embedding_dict, speaker_embedding_dict_val = load_speaker_embeddings(hparams)
     
-    # Chuẩn bị sẵn Processor (truyền dict vào để không phải load lại nhiều lần)
+    # Processors & Collate
     prepare_text_mel_train = PrepareTextMel(hparams, speaker_embedding_dict)
     collate_fn = CollateTextMel(hparams)
 
-    # Load Validation Set (Chỉ Rank 0 cần)
+    # [FIX 1] KHỞI TẠO MEL TRANSFORM MỘT LẦN DUY NHẤT & ĐƯA LÊN GPU
+    # Dùng chung cho cả Train và Val, và cho tất cả các Batch
+    mel_transform = prepare_text_mel_train.get_mel_transform(hparams).to(device_id)
+
+    # Validation Set (Chỉ Rank 0)
     val_set = None
     if rank == 0:
         print(f"[Rank {rank}] Starting chunk-by-chunk training...")
@@ -162,11 +166,10 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
         val_set = get_valloader(hparams, prepare_text_mel_val, collate_fn)
 
     # --- 5. Training Loop ---
-    # Cờ dừng toàn cục
     should_stop_global = False
 
     for epoch in range(global_epoch, hparams.max_epochs):
-        if should_stop_global: break # Thoát vòng lặp Epoch
+        if should_stop_global: break 
 
         if rank == 0:
             print(f"\n{'='*30} Epoch {epoch} {'='*30}")
@@ -176,15 +179,14 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
         for chunk_idx in range(current_start, len(hparams.dataset_chunks)):
             
             # --- Tạo DataLoader ---
-            # Hàm này phải đảm bảo logic: Rank 0 load cache, Rank > 0 đợi barrier
             train_loader = get_trainloader_chunk(
                 rank, world_size, hparams, chunk_idx,
-                prepare_text_mel_train,
+                prepare_text_mel_train, # Truyền processor đã init
                 collate_fn,
                 seed=hparams.seed + epoch
             )
 
-            # --- Training Loop trên Chunk ---
+            # --- Training Loop ---
             model.train()
             if rank == 0:
                 pbar = tqdm(train_loader, desc=f"Ep {epoch}-Ck {chunk_idx}", unit="batch")
@@ -193,10 +195,13 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
             for i, batch in enumerate(pbar):
                 optimizer.zero_grad()
-                model_inputs, ground_truth = parse_batch_gpu(batch, rank, prepare_text_mel_train.get_mel_transform(), hparams) #type: ignore
-                model_outputs = model(model_inputs)
                 
+                # [FIX 2] Truyền object mel_transform đã có sẵn trên GPU
+                model_inputs, ground_truth = parse_batch_gpu(batch, device_id, mel_transform, hparams)
+                
+                model_outputs = model(model_inputs)
                 output_length = model_inputs[3]
+                
                 loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
                 
                 loss.backward()
@@ -204,13 +209,10 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 optimizer.step()
                 
                 if rank == 0:
-                    pbar.set_postfix({'Loss': f"{loss.item():.4f}"}) #type: ignore
+                    pbar.set_postfix({'Loss': f"{loss.item():.4f}"}) # type: ignore
 
-            # --- KẾT THÚC 1 CHUNK: VALIDATION ---
-            # Khởi tạo stop_signal cho TẤT CẢ các rank
+            # --- VALIDATION ---
             stop_signal = torch.tensor(0).to(device_id)
-
-            # Đồng bộ trước khi validate để chắc chắn Rank 0 không chạy trước
             if hparams.ddp_run: dist.barrier()
 
             if rank == 0 and val_set is not None:
@@ -219,56 +221,44 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 with torch.no_grad():
                     print(f"[Rank {rank}] Validating after chunk {chunk_idx}...")
                     for val_batch in val_set:
-                        v_inputs, v_truth = parse_batch_gpu(val_batch, rank, prepare_text_mel_val.get_mel_transform(), hparams) #type: ignore
+                        # [FIX 3] Dùng chung mel_transform ở đây luôn
+                        v_inputs, v_truth = parse_batch_gpu(val_batch, device_id, mel_transform, hparams)
                         v_outputs = model(v_inputs)
                         v_out_len = v_inputs[3]
                         v_loss, _, _, _ = criterion(v_outputs, v_truth, v_out_len)
                         total_val_loss += v_loss.item()
                 
                 avg_val_loss = total_val_loss / len(val_set)
-                print(f"[Rank {rank}] Ep {epoch}-Ck {chunk_idx} | Val Loss: {avg_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
+                print(f"\n[Rank {rank}] Ep {epoch}-Ck {chunk_idx} | Val Loss: {avg_val_loss:.5f}")
 
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
                     patience_counter = 0
                     save_name = f"checkpoint_{epoch}_{chunk_idx}_best.pt"
-                    # Lưu index là chunk_idx + 1 để khi resume sẽ chạy chunk tiếp theo
                     save_checkpoint_chunk(raw_model, optimizer, epoch, chunk_idx + 1, save_name, hparams)
                     print(f"Saved NEW BEST model: {save_name}")
                 else:
                     patience_counter += 1
                     if patience_counter >= hparams.early_stopping_patience:
                         print(f"==> EARLY STOPPING TRIGGERED!")
-                        stop_signal = torch.tensor(1).to(device_id) # Set cờ dừng
+                        stop_signal = torch.tensor(1).to(device_id)
             
-            # Broadcast tín hiệu dừng
             if hparams.ddp_run:
                 dist.broadcast(stop_signal, src=0)
             
-            # --- DỌN DẸP CHUNK CACHE ---
-            # Hủy DataLoader và GC trước khi xóa file
-            # Phải hủy ở tất cả các rank vì rank nào cũng đang giữ file handle
+            # --- CLEANUP ---
             if rank == 0: pbar.close() # type: ignore
             del train_loader
-            gc.collect() 
+            gc.collect()
 
-            # Đợi tất cả nhả file
+            if hparams.ddp_run: dist.barrier()
+            if rank == 0: remove_chunk_cache(hparams, chunk_idx)
             if hparams.ddp_run: dist.barrier()
 
-            # Rank 0 xóa cache trên đĩa
-            if rank == 0:
-                remove_chunk_cache(hparams, chunk_idx)
-
-            # Đợi xóa xong
-            if hparams.ddp_run: dist.barrier()
-
-            # Kiểm tra tín hiệu dừng để Break
             if stop_signal.item() == 1:
-                if rank == 0: print("Stopping training loop...")
-                should_stop_global = True # Đánh dấu để thoát vòng lặp Epoch bên ngoài
-                break # Thoát vòng lặp Chunk
+                should_stop_global = True
+                break 
 
-        # Reset start_chunk cho epoch sau
         start_chunk_index = 0
 
     if hparams.ddp_run:
