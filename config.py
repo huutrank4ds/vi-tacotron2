@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 _pad = '_'
 _punctuation = '!,.:;? '
@@ -96,4 +96,5 @@ class Hparams:
     # --- Các tham số cho dữ liệu lớn ---
     dataset_chunks: List[str] = field(default_factory=lambda: DATASET_CHUNKS_DEFAULT)
     cache_chunk_dir: str = '/kaggle/working/chunk_cache'
+    metadata: Dict[int, int] = field(default_factory=dict)  # Lưu trữ metadata cho từng chunk
     

@@ -60,36 +60,15 @@ def load_dataset_chunks(rank, hparams: Hparams, index: int):
         raise IndexError("Index out of range for dataset chunks.")
     
     file_pattern = str(Path(hparams.dataset_chunks[index]) / '*.parquet')
-    chunk_cache_dir = str(Path(hparams.cache_chunk_dir) / f"chunk_{index}")
-    
-    dataset = None
 
-    # --- Rank 0 làm việc (Tạo Cache) ---
-    if rank == 0:
-        print(f"[Rank {rank}] Generating cache for chunk {index}...")
-        dataset = load_dataset(
-            'parquet', 
-            data_files={'train': file_pattern},
-            cache_dir=chunk_cache_dir,
-            split='train'
-        )
-    
-    # --- Đồng bộ hóa (Chờ Rank 0 làm xong) ---
-    if hparams.ddp_run:
-        dist.barrier()
-        
-    # --- Các Rank còn lại load (Dùng lại Cache) ---
-    if rank != 0:
-        print(f"[Rank {rank}] Loading cached chunk {index}...")
-        # load_dataset sẽ tự phát hiện và load cực nhanh (không tính toán lại)
-        dataset = load_dataset(
-            'parquet', 
-            data_files={'train': file_pattern},
-            cache_dir=chunk_cache_dir,
-            split='train'
-        )
-        
-    print(f"[Rank {rank}] Dataset chunk {index} ready. Size: {len(dataset)}") # type: ignore
+    print(f"[Rank {rank}] Generating cache for chunk {index}...")
+    dataset = load_dataset(
+        'parquet', 
+        data_files={'train': file_pattern},
+        split='train',
+        streaming=True
+    )
+    print(f"[Rank {rank}] Dataset chunk {index} ready.") # type: ignore
     return dataset
 
 def remove_chunk_cache(hparams: Hparams, index: int):
@@ -122,32 +101,28 @@ def get_trainloader_chunk(
     # Load dataset (Map-style Arrow)
     dataset_chunk = load_dataset_chunks(rank, hparams, index)
     
-    # Global Shuffle: Xáo trộn TRƯỚC KHI chia cho các GPU
-    # Cần seed giống nhau ở mọi rank để đảm bảo đồng bộ
+    # Thực hiện global shuffle (tùy chọn) và sharding
     if hparams.shuffle:
-        dataset_chunk = dataset_chunk.shuffle(seed=seed) # type: ignore
-    
-    # Manual Sharding
-    sharded_ds = dataset_chunk.shard(num_shards=world_size, index=rank) # type: ignore
+        shuffled_ds = dataset_chunk.shuffle(seed=seed, buffer_size=hparams.shuffle_buffer_size) # type: ignore
+        sharded_ds = shuffled_ds.shard(num_shards=world_size, index=rank) # type: ignore
+    else:
+        sharded_ds = dataset_chunk.shard(num_shards=world_size, index=rank) # type: ignore
 
     # Map xử lý
     processed_ds = sharded_ds.map(
         prepare_text_mel_train,
         batched=True,
-        load_from_cache_file=False, #type: ignore
-        batch_size=1000,
-        num_proc=hparams.num_cpu #type: ignore
+        batch_size=1000
     )
     
     # Tạo DataLoader
     trainloader = DataLoader(
         processed_ds, # type: ignore
         batch_size=hparams.batch_size,
-        shuffle=True,        # Local shuffle cho từng batch trong GPU
-        num_workers=hparams.num_cpu,  # Số worker cho DataLoader
+        shuffle=False,
+        num_workers=0,
         pin_memory=True,     # Tốt cho GPU training
         collate_fn=collate_fn,
-        persistent_workers=True # Giúp giữ worker sống giữa các epoch nhỏ
     )
     print(f"[Rank {rank}] DataLoader for chunk {index} created.")
     return trainloader

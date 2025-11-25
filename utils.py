@@ -2,22 +2,23 @@ import numpy as np
 import torch
 import os
 
-def load_checkpoint(checkpoint_path, model, device, optimizer=None, strict=True):
-    """
-    Tải checkpoint từ đường dẫn và khôi phục trạng thái cho model và optimizer (nếu có).
-    """
+def load_checkpoint_chunk(checkpoint_path, model, device, optimizer = None):
+    """Tải checkpoint từ file và khôi phục trạng thái model và optimizer."""
     if not os.path.isfile(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-    print(f"Loading checkpoint from {checkpoint_path}")
+        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+    
     checkpoint_dict = torch.load(checkpoint_path, map_location=device)
-    # Khôi phục trọng số mô hình
-    model.load_state_dict(checkpoint_dict['model_state_dict'], strict=strict)
-    # Khôi phục optimizer (nếu có)
+    model.load_state_dict(checkpoint_dict['model_state_dict'])
+    
     if optimizer is not None and 'optimizer_state_dict' in checkpoint_dict:
         optimizer.load_state_dict(checkpoint_dict['optimizer_state_dict'])
-    # Trả về checkpoint để có thể dùng thêm các thông tin khác (epoch, loss, v.v.)
-    return checkpoint_dict
-
+    
+    best_val_loss = checkpoint_dict.get('best_val_loss', None)
+    epoch = checkpoint_dict.get('epoch', None)
+    chunk_index = checkpoint_dict.get('chunk_index', None)
+    pattern = checkpoint_dict.get('pattern', None)
+    return best_val_loss, epoch, chunk_index, pattern
+    
 
 def get_mask_from_lengths(lengths):
     """Tạo mask từ lengths - an toàn với cả CPU và GPU"""

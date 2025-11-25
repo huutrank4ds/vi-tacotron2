@@ -12,7 +12,7 @@ import os
 from datetime import timedelta
 import builtins
 from processing import PrepareTextMel, CollateTextMel
-from utils import to_gpu
+from utils import to_gpu, load_checkpoint_chunk
 from torch.nn.utils.rnn import pad_sequence
 
 # Override print để luôn flush output
@@ -80,13 +80,15 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
         (mels, gate_padded)
     )
 
-def save_checkpoint_chunk(model, optimizer, epoch, chunk_index, filepath, hparams: Hparams):
+def save_checkpoint_chunk(model, optimizer, best_val_loss, epoch, chunk_index, pattern, filepath, hparams: Hparams):
     model_state_dict = model.state_dict()
     checkpoint_dict = {
         'model_state_dict': model_state_dict,
         'optimizer_state_dict': optimizer.state_dict(),
+        'best_val_loss': best_val_loss,
         'epoch': epoch,
-        'chunk_index': chunk_index
+        'chunk_index': chunk_index,
+        'pattern': pattern
     }
     if not os.path.exists(hparams.checkpoint_path):
         os.makedirs(hparams.checkpoint_path)
@@ -134,16 +136,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
     path_to_checkpoint = os.path.join(hparams.checkpoint_path, hparams.name_file_checkpoint)
     if os.path.exists(path_to_checkpoint):
-        map_loc = f'cuda:{device_id}' if torch.cuda.is_available() else 'cpu'
-        checkpoint = torch.load(path_to_checkpoint, map_location=map_loc)
-        
-        raw_model.load_state_dict(checkpoint['model_state_dict']) #type: ignore
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    
-        global_epoch = checkpoint.get('epoch', 0)
-        best_val_loss = checkpoint.get('best_val_loss', float('inf'))
-        start_chunk_index = checkpoint.get('chunk_index', 0)
-        patience_counter = 0 
+        best_val_loss, global_epoch, start_chunk_index, patience_counter = load_checkpoint_chunk(path_to_checkpoint, raw_model, device_id, optimizer)
         print(f"[Rank {rank}] Resumed: Epoch {global_epoch}, Chunk {start_chunk_index}")
 
     # --- 4. Prepare Global Resources ---
@@ -154,14 +147,13 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
     prepare_text_mel_train = PrepareTextMel(hparams, speaker_embedding_dict)
     collate_fn = CollateTextMel(hparams)
 
-    # [FIX 1] KHỞI TẠO MEL TRANSFORM MỘT LẦN DUY NHẤT & ĐƯA LÊN GPU
-    # Dùng chung cho cả Train và Val, và cho tất cả các Batch
+    # mel_transform dùng chung cho cả Train và Val, và cho tất cả các Batch
     mel_transform = prepare_text_mel_train.get_mel_transform(hparams).to(device_id)
 
     # Validation Set (Chỉ Rank 0)
     val_set = None
     if rank == 0:
-        print(f"[Rank {rank}] Starting chunk-by-chunk training...")
+        print(f"[Rank {rank}] Preparing Validation Set...")
         prepare_text_mel_val = PrepareTextMel(hparams, speaker_embedding_dict_val)
         val_set = get_valloader(hparams, prepare_text_mel_val, collate_fn)
 
@@ -188,76 +180,84 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
             # --- Training Loop ---
             model.train()
+            train_loader_iter = iter(train_loader)
             if rank == 0:
-                pbar = tqdm(train_loader, desc=f"Ep {epoch}-Ck {chunk_idx}", unit="batch")
+                pbar = tqdm(train_loader, 
+                            desc=f"Epoch {epoch} | Chunk {chunk_idx}", 
+                            total=int(hparams.metadata.get(chunk_idx + 1, 0) / (hparams.batch_size * world_size)), 
+                            unit="batch", 
+                            position=0)
             else:
-                pbar = train_loader
+                pbar = train_loader_iter
 
             for i, batch in enumerate(pbar):
                 optimizer.zero_grad()
-                
-                # [FIX 2] Truyền object mel_transform đã có sẵn trên GPU
                 model_inputs, ground_truth = parse_batch_gpu(batch, device_id, mel_transform, hparams)
-                
                 model_outputs = model(model_inputs)
                 output_length = model_inputs[3]
-                
                 loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
-                
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.grad_clip_thresh)
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.grad_clip_thresh)
                 optimizer.step()
                 
                 if rank == 0:
-                    pbar.set_postfix({'Loss': f"{loss.item():.4f}"}) # type: ignore
-
+                    pbar.set_postfix({'Loss': f"{loss.item():.4f}", # type: ignore
+                                      'Mel': f"{loss_mel.item():.4f}",
+                                      'Postnet': f"{loss_mel_postnet.item():.4f}",
+                                      'Gate': f"{loss_gate.item():.4f}"}) # type: ignore
+            if rank == 0:
+                pbar.close() # type: ignore
+                del pbar
             # --- VALIDATION ---
-            stop_signal = torch.tensor(0).to(device_id)
-            if hparams.ddp_run: dist.barrier()
+            if hparams.ddp_run:
+                dist.barrier()
 
+            stop_signal = torch.tensor(0).to(device_id) # 0: Continue, 1: Stop
+            # Chỉ Rank 0 thực hiện tính toán Validation
             if rank == 0 and val_set is not None:
                 model.eval()
                 total_val_loss = 0.0
                 with torch.no_grad():
-                    print(f"[Rank {rank}] Validating after chunk {chunk_idx}...")
-                    for val_batch in val_set:
-                        # [FIX 3] Dùng chung mel_transform ở đây luôn
-                        v_inputs, v_truth = parse_batch_gpu(val_batch, device_id, mel_transform, hparams)
+                    val_progress = tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1)
+                    for val_batch in val_progress:
+                        v_inputs, v_truth = raw_model.parse_batch(val_batch, rank) #type: ignore
                         v_outputs = model(v_inputs)
                         v_out_len = v_inputs[3]
                         v_loss, _, _, _ = criterion(v_outputs, v_truth, v_out_len)
                         total_val_loss += v_loss.item()
+                    val_progress.close()
                 
                 avg_val_loss = total_val_loss / len(val_set)
-                print(f"\n[Rank {rank}] Ep {epoch}-Ck {chunk_idx} | Val Loss: {avg_val_loss:.5f}")
+                print(f"\n[Rank {rank}] Epoch {epoch} | Chunk {chunk_idx} | Val Loss: {avg_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
 
+                # ===> [FEATURE 2] LOGIC EARLY STOPPING <===
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
                     patience_counter = 0
-                    save_name = f"checkpoint_{epoch}_{chunk_idx}_best.pt"
-                    save_checkpoint_chunk(raw_model, optimizer, epoch, chunk_idx + 1, save_name, hparams)
+                    # Lưu best model
+                    save_name = f"checkpoint_epoch_{epoch}_chunk_{chunk_idx}.pt"
+                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, epoch, chunk_idx, hparams.dataset_chunks[chunk_idx], save_name, hparams)
                     print(f"Saved NEW BEST model: {save_name}")
                 else:
                     patience_counter += 1
                     if patience_counter >= hparams.early_stopping_patience:
-                        print(f"==> EARLY STOPPING TRIGGERED!")
-                        stop_signal = torch.tensor(1).to(device_id)
+                        print(f"==> EARLY STOPPING TRIGGERED at epoch {epoch}, chunk {chunk_idx}!")
+                        stop_signal = torch.tensor(1).to(device_id) # Bật tín hiệu dừng
+
+                model.train()
             
             if hparams.ddp_run:
+                # Rank 0 truyền tín hiệu dừng cho các Rank khác
                 dist.broadcast(stop_signal, src=0)
             
-            # --- CLEANUP ---
-            if rank == 0: pbar.close() # type: ignore
-            del train_loader
-            gc.collect()
-
-            if hparams.ddp_run: dist.barrier()
-            if rank == 0: remove_chunk_cache(hparams, chunk_idx)
-            if hparams.ddp_run: dist.barrier()
-
             if stop_signal.item() == 1:
                 should_stop_global = True
-                break 
+                if rank == 0:
+                    print("Master requested stop. Stopping all workers...")
+            
+            # Barrier lần nữa để đảm bảo tất cả cùng thoát hoặc cùng tiếp tục
+            if hparams.ddp_run:
+                dist.barrier()
 
         start_chunk_index = 0
 
