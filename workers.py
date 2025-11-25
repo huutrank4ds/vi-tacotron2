@@ -15,6 +15,7 @@ from processing import PrepareTextMel, CollateTextMel
 from utils import to_gpu, load_checkpoint_chunk
 from torch.nn.utils.rnn import pad_sequence
 
+
 # Override print để luôn flush output
 if not hasattr(builtins, "original_print_safe"):
     builtins.original_print_safe = builtins.print #type: ignore
@@ -52,7 +53,7 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
     # 2. Xử lý Audio
     # batch['audio'] là list các tensor, cần chuyển từng cái hoặc pad xong mới chuyển
     # Tốt nhất là list comprehension rồi pad
-    raw_audio_list = [to_gpu(x, device) for x in batch['audio']]
+    raw_audio_list = [to_gpu(x, device) for x in batch['audio_tensor']]
     
     # Pad waveform với giá trị 0 (Silence)
     wav_padded = pad_sequence(raw_audio_list, batch_first=True, padding_value=0.0)
