@@ -13,7 +13,6 @@ from datetime import timedelta
 import builtins
 from processing import PrepareTextMel, CollateTextMel
 from utils import to_gpu, load_checkpoint_chunk
-from torch.nn.utils.rnn import pad_sequence
 
 
 # Override print để luôn flush output
@@ -49,22 +48,14 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
     text_padded = to_gpu(batch['text_inputs'], device).long()
     input_lengths = to_gpu(batch['text_lengths'], device).long()
     speaker_embeddings = to_gpu(batch['speaker_embeddings'], device).float()
+    wav_lengths = to_gpu(batch['wav_lengths'], device).long()
+    audio_list = to_gpu(batch['audio_tensors'], device)
     
-    # 2. Xử lý Audio
-    # batch['audio'] là list các tensor, cần chuyển từng cái hoặc pad xong mới chuyển
-    # Tốt nhất là list comprehension rồi pad
-    raw_audio_list = [to_gpu(x, device) for x in batch['audio_tensor']]
-    
-    # Pad waveform với giá trị 0 (Silence)
-    wav_padded = pad_sequence(raw_audio_list, batch_first=True, padding_value=0.0)
-    
-    # Tính Mel: Output shape [Batch, n_mels, Time]
-    # mel_transform đã nằm trên GPU nên bước này cực nhanh
-    mels = mel_transform(wav_padded)
+    # 2. Tính Mel Spectrograms
+    mels = mel_transform(audio_list)
     mels = torch.log(torch.clamp(mels, min=1e-5)) 
     
     # Tính độ dài thực tế (Dựa trên wav lengths gốc)
-    wav_lengths = torch.tensor([x.shape[0] for x in raw_audio_list], device=device, dtype=torch.long)
     mel_lengths = 1 + (wav_lengths // hparams.hop_length)
     
     # 3. Tạo Gate Target (Stop Token)

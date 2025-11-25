@@ -110,6 +110,7 @@ class PrepareTextMel:
         text_lengths_list = []
         speaker_embeddings_list = []
         audio_tensors_list = []
+        wav_lengths_list = []
 
         # Lặp qua từng mẫu trong batch (chunk)
         for i in range(len(batch['text'])):
@@ -131,18 +132,21 @@ class PrepareTextMel:
 
             # log_mel có shape: [n_mels, n_frames]
             audio_tensor = self.resample_audio(audio_array, original_sr)
+            wav_len = audio_tensor.shape[0]
 
             # --- 4. Thêm vào danh sách ---
             text_inputs_list.append(text_seq)
             text_lengths_list.append(text_len)
             speaker_embeddings_list.append(speaker_embedding)
             audio_tensors_list.append(audio_tensor)
+            wav_lengths_list.append(wav_len)
         
         # Trả về dict các danh sách
         return {
             'text_inputs': text_inputs_list,
             'text_lengths': text_lengths_list,
             'audio_tensors': audio_tensors_list,
+            'wav_lengths': wav_lengths_list,
             'speaker_embeddings': speaker_embeddings_list,
         }
             
@@ -256,12 +260,14 @@ class CollateTextMel:
         
         # --- 3. Lấy độ dài (Lengths) ---
         text_lengths = torch.tensor([item['text_lengths'] for item in batch], dtype=torch.long)
+        wav_lengths = torch.tensor([item['wav_lengths'] for item in batch], dtype=torch.long)
         speaker_embeddings = torch.stack([torch.as_tensor(item['speaker_embeddings'], dtype=torch.float) for item in batch])
         
         return {
             'text_inputs': text_padded,      # [B, max_text_len]
             'text_lengths': text_lengths,    # [B]
             'audio_tensors': audio_padded,   # [B, max_audio_len]
+            'wav_lengths': wav_lengths,      # [B]
             'speaker_embeddings': speaker_embeddings,  # [B, embedding_dim]
         }
 
