@@ -212,7 +212,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 with torch.no_grad():
                     val_progress = tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1)
                     for val_batch in val_progress:
-                        v_inputs, v_truth = raw_model.parse_batch(val_batch, rank) #type: ignore
+                        v_inputs, v_truth = parse_batch_gpu(val_batch, device_id, mel_transform, hparams)
                         v_outputs = model(v_inputs)
                         v_out_len = v_inputs[3]
                         v_loss, _, _, _ = criterion(v_outputs, v_truth, v_out_len)
