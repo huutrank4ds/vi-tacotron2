@@ -174,9 +174,12 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
             model.train()
             train_loader_iter = iter(train_loader)
             if rank == 0:
+                global_batch_size = hparams.batch_size * world_size
+                total_samples = hparams.metadata.get(chunk_idx + 1, 0)
+                total_steps = (total_samples + global_batch_size - 1) // global_batch_size
                 pbar = tqdm(train_loader, 
-                            desc=f"Epoch {epoch} | Chunk {chunk_idx}", 
-                            total=int(hparams.metadata.get(chunk_idx + 1, 0) / (hparams.batch_size * world_size)), 
+                            desc=f"Epoch {epoch}|Chunk {chunk_idx}", 
+                            total=total_steps, 
                             unit="batch", 
                             position=0)
             else:
