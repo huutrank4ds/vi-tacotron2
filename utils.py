@@ -6,8 +6,11 @@ def load_checkpoint_chunk(checkpoint_path, model, device, optimizer = None):
     """Tải checkpoint từ file và khôi phục trạng thái model và optimizer."""
     if not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
-    
-    checkpoint_dict = torch.load(checkpoint_path, map_location=device)
+    if isinstance(device, int):
+        map_location = f'cuda:{device}'
+    else:
+        map_location = device
+    checkpoint_dict = torch.load(checkpoint_path, map_location=map_location)
     model.load_state_dict(checkpoint_dict['model_state_dict'])
     
     if optimizer is not None and 'optimizer_state_dict' in checkpoint_dict:
