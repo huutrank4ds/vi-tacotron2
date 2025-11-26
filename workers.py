@@ -72,15 +72,14 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
         (mels, gate_padded)
     )
 
-def save_checkpoint_chunk(model, optimizer, best_val_loss, epoch, chunk_index, pattern, filepath, hparams: Hparams):
+def save_checkpoint_chunk(model, optimizer, best_val_loss, epoch, chunk_index, filepath, hparams: Hparams):
     model_state_dict = model.state_dict()
     checkpoint_dict = {
         'model_state_dict': model_state_dict,
         'optimizer_state_dict': optimizer.state_dict(),
         'best_val_loss': best_val_loss,
         'epoch': epoch,
-        'chunk_index': chunk_index,
-        'pattern': pattern
+        'chunk_index': chunk_index
     }
     if not os.path.exists(hparams.checkpoint_path):
         os.makedirs(hparams.checkpoint_path)
@@ -237,7 +236,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     patience_counter = 0
                     # Lưu best model
                     save_name = f"checkpoint_epoch_{epoch}_chunk_{chunk_idx}.pt"
-                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, epoch, chunk_idx, hparams.dataset_chunks[chunk_idx], save_name, hparams)
+                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, epoch, chunk_idx, save_name, hparams)
                     print(f"Saved NEW BEST model: {save_name}")
                 else:
                     patience_counter += 1

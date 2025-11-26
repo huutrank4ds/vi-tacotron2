@@ -19,8 +19,7 @@ def load_checkpoint_chunk(checkpoint_path, model, device, optimizer = None):
     best_val_loss = checkpoint_dict.get('best_val_loss', None)
     epoch = checkpoint_dict.get('epoch', None)
     chunk_index = checkpoint_dict.get('chunk_index', None)
-    pattern = checkpoint_dict.get('pattern', None)
-    return best_val_loss, epoch, chunk_index, pattern
+    return best_val_loss, epoch, chunk_index
     
 
 def get_mask_from_lengths(lengths):
