@@ -12,13 +12,17 @@ class PrepareTextMel:
     2. Có thể gọi được (callable) để xử lý các batch (chunks) từ 
        datasets.map, chuyển đổi text và audio.
     """
-    def __init__(self, hparams: Hparams, speaker_embedding_dict: dict):
+    def __init__(self, hparams: Hparams, speaker_embedding_dict: dict = {}):
         """
         Khởi tạo processor với các siêu tham số.
         """
         self.hparams = hparams 
-        self.speaker_embedding_dict = speaker_embedding_dict
-        self._speaker_to_id = {s: i for i, s in self.speaker_embedding_dict['speaker_map'].items()}
+        if speaker_embedding_dict != {}:
+            self.speaker_embedding_dict = speaker_embedding_dict
+            self._speaker_to_id = {s: i for i, s in self.speaker_embedding_dict['speaker_map'].items()}
+        else:
+            self.speaker_embedding_dict = None
+            self._speaker_to_id = {}
 
         # --- Cấu hình Text ---
         self.symbols = hparams.symbols
