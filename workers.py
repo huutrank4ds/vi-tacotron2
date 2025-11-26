@@ -223,7 +223,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     val_progress.close()
                 
                 avg_val_loss = total_val_loss / len(val_set)
-                print(f"\n[Rank {rank}] Epoch {epoch} | Chunk {chunk_idx} | Val Loss: {avg_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
+                print(f"\n[Rank {rank}] Epoch {epoch} | Chunk {chunk_idx} | Val Loss: {avg_val_loss:.5f}")
 
                 # ===> [FEATURE 2] LOGIC EARLY STOPPING <===
                 if avg_val_loss < best_val_loss:
@@ -238,6 +238,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     if patience_counter >= hparams.early_stopping_patience:
                         print(f"==> EARLY STOPPING TRIGGERED at epoch {epoch}, chunk {chunk_idx}!")
                         stop_signal = torch.tensor(1).to(device_id) # Bật tín hiệu dừng
+                    print(f"Best Val Loss remains: {best_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
 
                 model.train()
             
