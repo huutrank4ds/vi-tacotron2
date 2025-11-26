@@ -127,7 +127,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
     path_to_checkpoint = os.path.join(hparams.checkpoint_path, hparams.name_file_checkpoint)
     if os.path.exists(path_to_checkpoint):
-        best_val_loss, epoch, chunk_index, patience_counter = load_checkpoint_chunk(path_to_checkpoint, raw_model, device_id, optimizer)
+        best_val_loss, epoch, chunk_index = load_checkpoint_chunk(path_to_checkpoint, raw_model, device_id, optimizer)
         if chunk_index + 1 >= len(hparams.dataset_chunks):
             global_epoch = epoch + 1
             start_chunk_index = 0
