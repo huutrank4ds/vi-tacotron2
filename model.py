@@ -100,8 +100,14 @@ class Tacotron2(nn.Module):
             output_lengths)
 
     def inference(self, inputs):
-        embedded_inputs = self.embedding(inputs).transpose(1, 2)
+        text_inputs, speaker_embeddings = inputs
+
+        embedded_inputs = self.embedding(text_inputs).transpose(1, 2)
+        speaker_projection = self.speaker_projection(speaker_embeddings)
+
         encoder_outputs = self.encoder.inference(embedded_inputs)
+        encoder_outputs = encoder_outputs + speaker_projection.unsqueeze(1)
+
         mel_outputs, gate_outputs, alignments = self.decoder.inference(
             encoder_outputs)
 

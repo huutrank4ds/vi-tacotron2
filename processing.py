@@ -91,6 +91,10 @@ class PrepareTextMel:
         # 5. Bỏ batch dim và trả về
         return log_mel.squeeze(0) # Shape: [n_mels, n_frames]
 
+
+    def prosessing_text(self, text, device):
+        return torch.IntTensor(self.text_to_sequence(text)).unsqueeze(0).to(device)
+
     # --- Phương thức __call__ để dùng với .map() ---
 
     def __call__(self, batch):
