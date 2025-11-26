@@ -28,7 +28,7 @@ class Hparams:
     # --- Các tham số khác ---
     mask_padding: bool = True
     fp16_run: bool = False
-    n_frames_per_step: int = 1 # Rất quan trọng cho Decoder
+    n_frames_per_step: int = 2 # Rất quan trọng cho Decoder
     num_cpu : int = 4  # Số worker cho DataLoader
     
     # Text
@@ -90,7 +90,7 @@ class Hparams:
     shuffle: bool = True
     shuffle_buffer_size: int = 10_000
     max_step_training: int = 5000
-    early_stopping_patience: int = 5
+    early_stopping_patience: int = 12
     max_epochs: int = 50
 
     # --- Các tham số cho dữ liệu lớn ---

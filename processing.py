@@ -12,12 +12,12 @@ class PrepareTextMel:
     2. Có thể gọi được (callable) để xử lý các batch (chunks) từ 
        datasets.map, chuyển đổi text và audio.
     """
-    def __init__(self, hparams: Hparams, speaker_embedding_dict: dict = {}):
+    def __init__(self, hparams: Hparams, speaker_embedding_dict: dict = None): # type: ignore
         """
         Khởi tạo processor với các siêu tham số.
         """
         self.hparams = hparams 
-        if speaker_embedding_dict != {}:
+        if speaker_embedding_dict is not None:
             self.speaker_embedding_dict = speaker_embedding_dict
             self._speaker_to_id = {s: i for i, s in self.speaker_embedding_dict['speaker_map'].items()}
         else:
@@ -136,10 +136,15 @@ class PrepareTextMel:
             speaker_id = self._speaker_to_id.get(speaker_name, None)
             if speaker_id is None:
                 raise ValueError(f"Speaker '{speaker_name}' not found in speaker embedding dictionary.")
-            speaker_embedding = self.speaker_embedding_dict['mean_embeddings'][speaker_id]
+            if self.speaker_embedding_dict is not None:
+                speaker_embedding = self.speaker_embedding_dict['mean_embeddings'][speaker_id]
+            else:
+                speaker_embedding = torch.zeros(self.hparams.speaker_embedding_dim)  # Trả về embedding rỗng nếu không có dict
 
             # log_mel có shape: [n_mels, n_frames]
             audio_tensor = self.resample_audio(audio_array, original_sr)
+            if audio_tensor.dim() > 1:
+                audio_tensor = audio_tensor.squeeze()  # Chuyển về 1D nếu stereo
             wav_len = audio_tensor.shape[0]
 
             # --- 4. Thêm vào danh sách ---
@@ -250,33 +255,28 @@ class CollateTextMel:
                 'audio_tensors', 'speaker_embeddings'.
         """
         
-        # --- 1. Đệm (Pad) Text Inputs ---
-        all_text_inputs = [torch.as_tensor(item['text_inputs'], dtype=torch.long) for item in batch]
-        text_padded = pad_sequence(
-            all_text_inputs, 
-            batch_first=True, 
-            padding_value=self.text_pad_value
-        )
+        # Gom Text
+        text_inputs = [torch.as_tensor(x['text_inputs'], dtype=torch.long) for x in batch]
+        text_padded = pad_sequence(text_inputs, batch_first=True, padding_value=self.text_pad_value)
+        text_lengths = torch.tensor([x['text_lengths'] for x in batch], dtype=torch.long)
         
-        # --- 2. Đệm (Pad) Audio Tensors ---
-        all_audio_tensors = [torch.as_tensor(item['audio_tensors'], dtype=torch.float) for item in batch]
-        audio_padded = pad_sequence(
-            all_audio_tensors, 
-            batch_first=True, 
-            padding_value=0.0
-        )
+        # Gom Audio (Quan trọng)
+        audio_tensors = [torch.as_tensor(x['audio_tensors'], dtype=torch.float) for x in batch]
         
-        # --- 3. Lấy độ dài (Lengths) ---
-        text_lengths = torch.tensor([item['text_lengths'] for item in batch], dtype=torch.long)
-        wav_lengths = torch.tensor([item['wav_lengths'] for item in batch], dtype=torch.long)
-        speaker_embeddings = torch.stack([torch.as_tensor(item['speaker_embeddings'], dtype=torch.float) for item in batch])
+        # Pad Audio với giá trị 0 (Silence)
+        # Output: [Batch, Max_Time]
+        audio_padded = pad_sequence(audio_tensors, batch_first=True, padding_value=0.0)
+        wav_lengths = torch.tensor([x['wav_lengths'] for x in batch], dtype=torch.long)
+        
+        # Gom Speaker
+        speaker_embeddings = torch.stack([torch.as_tensor(x['speaker_embeddings'], dtype=torch.float) for x in batch])
         
         return {
             'text_inputs': text_padded,      # [B, max_text_len]
             'text_lengths': text_lengths,    # [B]
             'audio_tensors': audio_padded,   # [B, max_audio_len]
             'wav_lengths': wav_lengths,      # [B]
-            'speaker_embeddings': speaker_embeddings,  # [B, embedding_dim]
+            'speaker_embeddings': speaker_embeddings, # [B, Dim]
         }
 
     # def __call__(self, batch):

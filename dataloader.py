@@ -128,7 +128,6 @@ def get_trainloader_chunk(
     return trainloader
 
 
-# === HÀM TẠO DATALOADER ===
 def get_trainloader_valset(rank, world_size, hparams: Hparams, seed=None):
     """
     Tải và chuẩn bị DataLoader cho training (streaming, sharded)

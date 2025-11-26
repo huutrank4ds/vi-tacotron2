@@ -70,15 +70,20 @@ class Tacotron2(nn.Module):
     def parse_output(self, outputs, output_lengths=None):
         if self.mask_padding and output_lengths is not None:
             mask = ~get_mask_from_lengths(output_lengths)
-            mask = mask.expand(self.n_mel_channels, mask.size(0), mask.size(1))
-            mask = mask.permute(1, 0, 2)
+            
+            # Expand mask cho khớp chiều (như code logic đã sửa ở câu trước)
+            mask = mask.to(outputs[0].device)
+            mask_mel = mask.unsqueeze(1).expand_as(outputs[0])
 
-            outputs[0].data.masked_fill_(mask, 0.0)
-            outputs[1].data.masked_fill_(mask, 0.0)
-            outputs[2].data.masked_fill_(mask[:, 0, :], 1e3)  # gate energies
+            # --- CÁCH MỚI (Bỏ .data) ---
+            outputs[0].masked_fill_(mask_mel, 0.0)      # Mel
+            outputs[1].masked_fill_(mask_mel, 0.0)      # Mel Postnet
+            
+            # Sửa lại đoạn slice mask cho Gate như đã bàn ở câu trước
+            outputs[2].masked_fill_(mask, 1e3)          # Gate
 
         return outputs
-
+    
     def forward(self, inputs):
         text_inputs, text_lengths, mels, output_lengths, speaker_embeddings = inputs
         text_lengths, output_lengths = text_lengths.detach(), output_lengths.detach()
@@ -87,6 +92,8 @@ class Tacotron2(nn.Module):
 
         encoder_outputs = self.encoder(embedded_inputs, text_lengths)
         speaker_projection = self.speaker_projection(speaker_embeddings)
+
+        speaker_projection = torch.nn.functional.normalize(speaker_projection)
         encoder_outputs = encoder_outputs + speaker_projection.unsqueeze(1)
 
         mel_outputs, gate_outputs, alignments = self.decoder(
@@ -99,8 +106,7 @@ class Tacotron2(nn.Module):
             [mel_outputs, mel_outputs_postnet, gate_outputs, alignments],
             output_lengths)
 
-    def inference(self, inputs):
-        text_inputs, speaker_embeddings = inputs
+    def inference(self, text_inputs, speaker_embeddings):
 
         embedded_inputs = self.embedding(text_inputs).transpose(1, 2)
         speaker_projection = self.speaker_projection(speaker_embeddings)

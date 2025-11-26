@@ -52,10 +52,18 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
     audio_list = to_gpu(batch['audio_tensors'], device)
     
     # 2. Tính Mel Spectrograms
-    mels = mel_transform(audio_list)
-    mels = torch.log(torch.clamp(mels, min=1e-5)) 
+    mels = mel_transform(audio_list) # audio_list đã pad 0.0
+    mels = torch.log(torch.clamp(mels, min=1e-5))
     
     # Tính độ dài thực tế (Dựa trên wav lengths gốc)
+    r = hparams.n_frames_per_step
+    remainder = mels.shape[2] % r
+    if remainder != 0:
+        pad_size = r - remainder
+        # Pad chiều cuối (Time)
+        mels = torch.nn.functional.pad(mels, (0, pad_size), value=hparams.mel_pad_value)
+
+    # Tính độ dài thực tế
     mel_lengths = 1 + (wav_lengths // hparams.hop_length)
     
     # 3. Tạo Gate Target (Stop Token)
