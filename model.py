@@ -69,18 +69,28 @@ class Tacotron2(nn.Module):
 
     def parse_output(self, outputs, output_lengths=None):
         if self.mask_padding and output_lengths is not None:
-            mask = ~get_mask_from_lengths(output_lengths)
+            # [FIX QUAN TRỌNG] Lấy max_len từ chính tensor output (1422)
+            # thay vì lấy từ max(output_lengths) (1421)
+            max_len = outputs[0].size(2)
+            device = outputs[0].device
             
-            # Expand mask cho khớp chiều (như code logic đã sửa ở câu trước)
-            mask = mask.to(outputs[0].device)
-            mask_mel = mask.unsqueeze(1).expand_as(outputs[0])
+            # Tạo mask có kích thước khớp với output [B, T_out]
+            ids = torch.arange(0, max_len, device=device, dtype=torch.long)
+            # True là dữ liệu Valid, False là Padding (bao gồm cả phần r-pad)
+            mask_valid = (ids < output_lengths.unsqueeze(1)) 
+            
+            # Đảo ngược mask: True là Padding (để fill)
+            mask = ~mask_valid
 
-            # --- CÁCH MỚI (Bỏ .data) ---
-            outputs[0].masked_fill_(mask_mel, 0.0)      # Mel
-            outputs[1].masked_fill_(mask_mel, 0.0)      # Mel Postnet
+            # 2. Mask Mel (Expand ra 3D)
+            # mask shape: [B, T] -> [B, 1, T] -> [B, n_mels, T]
+            mask_mel = mask.unsqueeze(1).expand_as(outputs[0])
             
-            # Sửa lại đoạn slice mask cho Gate như đã bàn ở câu trước
-            outputs[2].masked_fill_(mask, 1e3)          # Gate
+            outputs[0].data.masked_fill_(mask_mel, 0.0)
+            outputs[1].data.masked_fill_(mask_mel, 0.0)
+            
+            # 3. Mask Gate
+            outputs[2].data.masked_fill_(mask, 1e3)
 
         return outputs
     
