@@ -2,6 +2,7 @@ import torch
 import torchaudio
 from config import Hparams
 from torch.nn.utils.rnn import pad_sequence
+import unicodedata
 
 class PrepareTextMel:
     """
@@ -53,6 +54,7 @@ class PrepareTextMel:
     def text_to_sequence(self, text):
         """Chuyển đổi văn bản thành chuỗi ID"""
         sequence = []
+        text = unicodedata.normalize('NFC', text)
         for char in text.lower():
             char_id = self._symbol_to_id.get(char) 
             if char_id is not None:
