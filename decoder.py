@@ -107,30 +107,22 @@ class Decoder(nn.Module):
         return decoder_inputs
 
     def parse_decoder_outputs(self, mel_outputs, gate_outputs, alignments):
-        """ Prepares decoder outputs for output
-        PARAMS
-        ------
-        mel_outputs:
-        gate_outputs: gate output energies
-        alignments:
-
-        RETURNS
-        -------
-        mel_outputs:
-        gate_outpust: gate output energies
-        alignments:
-        """
-        # (T_out, B) -> (B, T_out)
+        # 1. Xử lý Alignments
         alignments = torch.stack(alignments).transpose(0, 1)
-        # (T_out, B) -> (B, T_out)
-        gate_outputs = torch.stack(gate_outputs).transpose(0, 1)
+        
+        # 2. Xử lý Gate Outputs
+        gate_outputs = torch.stack(gate_outputs).transpose(0, 1) # [Batch, Steps]
         gate_outputs = gate_outputs.contiguous()
-        # (T_out, B, n_mel_channels) -> (B, T_out, n_mel_channels)
+        
+        # Logic này hoạt động cho cả r=1 và r>1
+        gate_outputs = gate_outputs.unsqueeze(-1).repeat(1, 1, self.n_frames_per_step)
+        
+        # Gộp chiều Steps và r lại -> [Batch, Total_Frames]
+        gate_outputs = gate_outputs.view(gate_outputs.size(0), -1)
+        
+        # 3. Xử lý Mel Outputs
         mel_outputs = torch.stack(mel_outputs).transpose(0, 1).contiguous()
-        # decouple frames per step
-        mel_outputs = mel_outputs.view(
-            mel_outputs.size(0), -1, self.n_mel_channels)
-        # (B, T_out, n_mel_channels) -> (B, n_mel_channels, T_out)
+        mel_outputs = mel_outputs.view(mel_outputs.size(0), -1, self.n_mel_channels)
         mel_outputs = mel_outputs.transpose(1, 2)
 
         return mel_outputs, gate_outputs, alignments
