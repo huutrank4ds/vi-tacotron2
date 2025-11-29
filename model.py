@@ -78,9 +78,9 @@ class Tacotron2(nn.Module):
             mask_mel = mask.unsqueeze(1).expand_as(outputs[0])
             
             # [FIX] Bỏ .data để chuẩn PyTorch mới
-            outputs[0].masked_fill_(mask_mel, 0.0)
-            outputs[1].masked_fill_(mask_mel, 0.0)
-            outputs[2].masked_fill_(mask, 1e3) # Gate
+            outputs[0] = outputs[0].masked_fill(mask_mel, 0.0)
+            outputs[1] = outputs[1].masked_fill(mask_mel, 0.0)
+            outputs[2] = outputs[2].masked_fill(mask, 1e3)
 
         return outputs
     
