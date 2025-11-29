@@ -3,12 +3,13 @@ import torch.nn as nn
 from utils import get_mask_from_lengths
 
 class Tacotron2Loss(nn.Module):
-    def __init__(self):
+    def __init__(self, pos_weight=10.0):
         super(Tacotron2Loss, self).__init__()
         # Dùng MSELoss (reduction='none' để tính từng phần tử)
         self.mel_loss_fn = nn.MSELoss(reduction='none') 
         # Dùng BCEWithLogitsLoss cho gate (đầu ra là logits)
-        self.gate_loss_fn = nn.BCEWithLogitsLoss(reduction='none')
+        weight = torch.tensor([pos_weight])
+        self.gate_loss_fn = nn.BCEWithLogitsLoss(reduction='none', pos_weight=weight)
         self.get_mask_from_lengths = get_mask_from_lengths
 
     # def forward(self, model_outputs, ground_truth, output_lengths):
