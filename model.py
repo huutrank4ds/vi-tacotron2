@@ -36,6 +36,7 @@ class Tacotron2(nn.Module):
         Khởi tạo trọng số cho khối speaker projection.
         Sử dụng Xavier Uniform cho Linear layers.
         """
+        init = False
         for module in self.speaker_projection.modules():
             if isinstance(module, nn.Linear):
                 # 1. Khởi tạo Weights: Xavier Uniform
@@ -44,8 +45,10 @@ class Tacotron2(nn.Module):
                 # 2. Khởi tạo Bias: Về 0
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0.0)
-        else:
-            raise NotImplementedError("Only Linear layers are supported in speaker_projection.")
+                init = True
+                break
+        if not init:
+            raise RuntimeError("Not able to initialize speaker projection weights.")
 
     def parse_batch(self, batch, rank):
         # text_padded, input_lengths, mel_padded, gate_padded, \
