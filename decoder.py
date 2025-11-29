@@ -107,20 +107,17 @@ class Decoder(nn.Module):
         return decoder_inputs
 
     def parse_decoder_outputs(self, mel_outputs, gate_outputs, alignments):
-        # 1. Xử lý Alignments
+        # 1. Alignments
         alignments = torch.stack(alignments).transpose(0, 1)
         
-        # 2. Xử lý Gate Outputs
-        gate_outputs = torch.stack(gate_outputs).transpose(0, 1) # [Batch, Steps]
-        gate_outputs = gate_outputs.contiguous()
+        # 2. Gate Outputs
+        gate_outputs = torch.stack(gate_outputs).transpose(0, 1).contiguous()
         
-        # Logic này hoạt động cho cả r=1 và r>1
+        # [Universal Fix] Nhân bản Gate cho khớp với số frame
         gate_outputs = gate_outputs.unsqueeze(-1).repeat(1, 1, self.n_frames_per_step)
-        
-        # Gộp chiều Steps và r lại -> [Batch, Total_Frames]
         gate_outputs = gate_outputs.view(gate_outputs.size(0), -1)
         
-        # 3. Xử lý Mel Outputs
+        # 3. Mel Outputs
         mel_outputs = torch.stack(mel_outputs).transpose(0, 1).contiguous()
         mel_outputs = mel_outputs.view(mel_outputs.size(0), -1, self.n_mel_channels)
         mel_outputs = mel_outputs.transpose(1, 2)
@@ -206,17 +203,6 @@ class Decoder(nn.Module):
         return mel_outputs, gate_outputs, alignments
 
     def inference(self, memory):
-        """ Decoder inference
-        PARAMS
-        ------
-        memory: Encoder outputs
-
-        RETURNS
-        -------
-        mel_outputs: mel outputs from the decoder
-        gate_outputs: gate outputs from the decoder
-        alignments: sequence of attention weights from the decoder
-        """
         decoder_input = self.get_go_frame(memory)
         self.initialize_decoder_states(memory, mask=None)
         mel_outputs, gate_outputs, alignments = [], [], []
@@ -224,12 +210,11 @@ class Decoder(nn.Module):
         while True:
             decoder_input = self.prenet(decoder_input)
             
-            # --- Bọc hàm decode() trong no_grad() ---
             with torch.no_grad():
                 mel_output, gate_output, alignment = self.decode(decoder_input)
 
             mel_outputs += [mel_output.squeeze(1)]
-            gate_outputs += [gate_output]
+            gate_outputs += [gate_output.squeeze(1)] # [FIX] Đã squeeze chuẩn
             alignments += [alignment]
 
             with torch.no_grad():

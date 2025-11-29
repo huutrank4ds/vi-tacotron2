@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 indexs/*.pt
 train-tacotron2-for-vi.ipynb
+data/
