@@ -18,6 +18,9 @@ class Hparams:
     speaker_embeddings_file: Optional[str] = None  # Đường dẫn tới file embeddings nếu có
     validation_speaker_embeddings_file: Optional[str] = None  # Đường dẫn tới file embeddings validation nếu có
     num_train_samples: int = 1043443
+    text_len_threshold: int = 5  # Giới hạn độ dài text tối thiểu
+    duration_min_threshold: float = 0.5  # Giới hạn độ dài audio tối thiểu (giây)
+    duration_max_threshold: float = 20.0  # Giới hạn độ dài audio tối đa (giây)
 
 
     # --- Tham số cho DDP ---
@@ -90,7 +93,7 @@ class Hparams:
     shuffle: bool = True
     shuffle_buffer_size: int = 10_000
     max_step_training: int = 5000
-    early_stopping_patience: int = 12
+    early_stopping_patience: int = 36
     max_epochs: int = 50
 
     # --- Các tham số cho dữ liệu lớn ---

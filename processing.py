@@ -3,6 +3,7 @@ import torchaudio
 from config import Hparams
 from torch.nn.utils.rnn import pad_sequence
 import unicodedata
+import re
 
 class PrepareTextMel:
     """
@@ -51,11 +52,21 @@ class PrepareTextMel:
 
     # --- Các Method xử lý Text ---
     
+    def clean_text(self, text):
+        if not text: return ""
+        text = unicodedata.normalize('NFC', text)
+        text = text.lower()
+        whitelist = "dứt|điểm|thi|công|phá|hỏi|than|lửng|net|com"
+        pattern = r'\bchấm\b(?!\s*(' + whitelist + '))'
+        text = re.sub(pattern, '.', text)
+        text = re.sub(r'\s+\.', '.', text)
+        return text
+
     def text_to_sequence(self, text):
         """Chuyển đổi văn bản thành chuỗi ID"""
         sequence = []
-        text = unicodedata.normalize('NFC', text)
-        for char in text.lower():
+        text = self.clean_text(text)
+        for char in text:
             char_id = self._symbol_to_id.get(char) 
             if char_id is not None:
                 sequence.append(char_id)
@@ -106,14 +117,6 @@ class PrepareTextMel:
     def __call__(self, batch):
         """
         Xử lý một batch (chunk) dữ liệu khi được gọi bởi datasets.map.
-        
-        Input: `batch` là một dict, ví dụ: 
-               {
-                'text': [str_1, ..., str_N], 
-                'audio': {'path': [...], 'array': [...], 'sampling_rate': [...]},
-                'speaker': [...]
-                }
-        Output: Một dict mới với các cột đã xử lý.
         """
         # Danh sách lưu trữ kết quả
         text_inputs_list = []
@@ -122,41 +125,71 @@ class PrepareTextMel:
         audio_tensors_list = []
         wav_lengths_list = []
 
-        # Lặp qua từng mẫu trong batch (chunk)
+        # Lặp qua từng mẫu trong batch
         for i in range(len(batch['text'])):
             # --- 1. Xử lý Text ---
             text = batch['text'][i]
+            # text_to_sequence nên đã bao gồm chuẩn hóa Unicode NFC
             text_seq = torch.IntTensor(self.text_to_sequence(text))
-            text_len = text_seq.shape[0]  # Độ dài chuỗi text
+            text_len = text_seq.shape[0]
             
             # --- 2. Xử lý Audio ---
             audio_data = batch['audio'][i]
             audio_array = audio_data['array']
             original_sr = audio_data['sampling_rate']
             
-            speaker_name = batch['speaker'][i]
-            speaker_id = self._speaker_to_id.get(speaker_name, None)
-            if speaker_id is None:
-                raise ValueError(f"Speaker '{speaker_name}' not found in speaker embedding dictionary.")
-            if self.speaker_embedding_dict is not None:
-                speaker_embedding = self.speaker_embedding_dict['mean_embeddings'][speaker_id]
-            else:
-                speaker_embedding = torch.zeros(self.hparams.speaker_embedding_dim)  # Trả về embedding rỗng nếu không có dict
-
-            # log_mel có shape: [n_mels, n_frames]
+            # Resample về target_sr
             audio_tensor = self.resample_audio(audio_array, original_sr)
+            
+            # [QUAN TRỌNG] Đảm bảo audio là 1D [Time]
             if audio_tensor.dim() > 1:
-                audio_tensor = audio_tensor.squeeze()  # Chuyển về 1D nếu stereo
+                audio_tensor = audio_tensor.squeeze() 
+            
             wav_len = audio_tensor.shape[0]
 
-            # --- 4. Thêm vào danh sách ---
+            # --- 3. Bộ lọc dữ liệu (Data Filtering) ---
+            # Tính độ dài giây
+            duration_sec = wav_len / self.hparams.target_sr
+            
+            # Điều kiện lọc:
+            # - Text rỗng hoặc Audio rỗng
+            # - Audio quá ngắn (< 0.5s): Thường là lỗi cắt hoặc khoảng lặng
+            # - Audio quá dài (> 12s): Gây tràn bộ nhớ GPU (OOM) với batch size lớn
+            if text_len < self.hparams.text_len_threshold or wav_len == 0:
+                continue
+            if duration_sec < self.hparams.duration_min_threshold:
+                # print(f"Skipped short audio: {duration_sec:.2f}s")
+                continue
+            if duration_sec > self.hparams.duration_max_threshold:
+                # print(f"Skipped long audio: {duration_sec:.2f}s") 
+                continue
+
+            # --- 4. Xử lý Speaker Embedding ---
+            speaker_name = batch['speaker'][i]
+            
+            # Logic lấy embedding an toàn (Tránh crash)
+            speaker_embedding = None
+            if self.speaker_embedding_dict is not None:
+                speaker_id = self._speaker_to_id.get(speaker_name)
+                if speaker_id is not None:
+                    try:
+                        speaker_embedding = self.speaker_embedding_dict['mean_embeddings'][speaker_id]
+                    except (KeyError, IndexError):
+                        pass
+            
+            # Fallback: Nếu không tìm thấy hoặc lỗi, dùng vector 0
+            if speaker_embedding is None:
+                print(f"Warning: Speaker '{speaker_name}' not found. Using zero vector.")
+                speaker_embedding = torch.zeros(self.hparams.speaker_embedding_dim, dtype=torch.float32)
+
+            # --- 5. Thêm vào danh sách ---
             text_inputs_list.append(text_seq)
             text_lengths_list.append(text_len)
             speaker_embeddings_list.append(speaker_embedding)
             audio_tensors_list.append(audio_tensor)
             wav_lengths_list.append(wav_len)
         
-        # Trả về dict các danh sách
+        # Trả về dict các danh sách (Key khớp với CollateTextMel)
         return {
             'text_inputs': text_inputs_list,
             'text_lengths': text_lengths_list,

@@ -80,12 +80,13 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
         (mels, gate_padded)
     )
 
-def save_checkpoint_chunk(model, optimizer, best_val_loss, epoch, chunk_index, filepath, hparams: Hparams):
+def save_checkpoint_chunk(model, optimizer, best_val_loss, patience_counter, epoch, chunk_index, filepath, hparams: Hparams):
     model_state_dict = model.state_dict()
     checkpoint_dict = {
         'model_state_dict': model_state_dict,
         'optimizer_state_dict': optimizer.state_dict(),
         'best_val_loss': best_val_loss,
+        'patience_counter': patience_counter,
         'epoch': epoch,
         'chunk_index': chunk_index
     }
@@ -135,7 +136,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
     path_to_checkpoint = os.path.join(hparams.checkpoint_path, hparams.name_file_checkpoint)
     if os.path.exists(path_to_checkpoint):
-        best_val_loss, epoch, chunk_index = load_checkpoint_chunk(path_to_checkpoint, raw_model, device_id, optimizer)
+        best_val_loss, epoch, chunk_index, patience_counter = load_checkpoint_chunk(path_to_checkpoint, raw_model, device_id, optimizer)
         if chunk_index + 1 >= len(hparams.dataset_chunks):
             global_epoch = epoch + 1
             start_chunk_index = 0
@@ -243,8 +244,8 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     best_val_loss = avg_val_loss
                     patience_counter = 0
                     # Lưu best model
-                    save_name = f"checkpoint_epoch_{epoch}_chunk_{chunk_idx}.pt"
-                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, epoch, chunk_idx, save_name, hparams)
+                    save_name = f"checkpoint_epoch_{epoch}_chunk_{chunk_idx}_best.pt"
+                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, chunk_idx, save_name, hparams)
                     print(f"Saved NEW BEST model: {save_name}")
                 else:
                     patience_counter += 1
@@ -252,6 +253,8 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                         print(f"==> EARLY STOPPING TRIGGERED at epoch {epoch}, chunk {chunk_idx}!")
                         stop_signal = torch.tensor(1).to(device_id) # Bật tín hiệu dừng
                     print(f"Best Val Loss remains: {best_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
+                    save_name = f"checkpoint_epoch_{epoch}_chunk_{chunk_idx}.pt"
+                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, chunk_idx, save_name, hparams)
 
                 model.train()
             
