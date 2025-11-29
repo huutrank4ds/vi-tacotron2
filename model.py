@@ -44,6 +44,8 @@ class Tacotron2(nn.Module):
                 # 2. Khởi tạo Bias: Về 0
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0.0)
+        else:
+            raise NotImplementedError("Only Linear layers are supported in speaker_projection.")
 
     def parse_batch(self, batch, rank):
         # text_padded, input_lengths, mel_padded, gate_padded, \
