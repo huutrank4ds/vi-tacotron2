@@ -59,6 +59,7 @@ class Hparams:
     encoder_n_convolutions: int = 3
     encoder_kernel_size: int = 5
     encoder_embedding_dim: int = 512
+    encoder_dropout: float = 0.2
 
     # --- Prenet ---
     prenet_dim: int = 256
