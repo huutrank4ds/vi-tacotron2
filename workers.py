@@ -255,7 +255,8 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     print(f"Best Val Loss remains: {best_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
                     save_name = f"checkpoint_epoch_{epoch}_chunk_{chunk_idx}.pt"
                     save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, chunk_idx, save_name, hparams)
-
+                    print(f"Saved checkpoint: {save_name}")
+                    
                 model.train()
             
             if hparams.ddp_run:
