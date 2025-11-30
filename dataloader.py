@@ -108,11 +108,17 @@ def get_trainloader_chunk(
     else:
         sharded_ds = dataset_chunk.shard(num_shards=world_size, index=rank) # type: ignore
 
+    try:
+        remove_cols = list(dataset_chunk.features.keys()) # type: ignore
+    except:
+        remove_cols = ['audio', 'text', 'speaker']
+
     # Map xử lý
     processed_ds = sharded_ds.map(
         prepare_text_mel_train,
         batched=True,
-        batch_size=1000
+        batch_size=1000,
+        remove_columns=remove_cols
     )
     
     # Tạo DataLoader
