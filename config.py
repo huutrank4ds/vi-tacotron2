@@ -93,7 +93,7 @@ class Hparams:
     shuffle: bool = True
     shuffle_buffer_size: int = 10_000
     max_step_training: int = 5000
-    early_stopping_patience: int = 36
+    early_stopping_patience: int = 48
     max_epochs: int = 50
 
     # --- Các tham số cho dữ liệu lớn ---

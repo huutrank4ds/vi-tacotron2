@@ -237,7 +237,8 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     val_progress.close()
                 
                 avg_val_loss = total_val_loss / len(val_set)
-                print(f"\n[Rank {rank}] Epoch {epoch} | Chunk {chunk_idx} | Val Loss: {avg_val_loss:.5f}")
+                print(f"\n[Rank {rank}] Epoch {epoch} | Chunk {chunk_idx} | Train Loss: {loss.item():.5f} | Mel: {loss_mel.item():.5f} | Postnet: {loss_mel_postnet.item():.5f} | Gate: {loss_gate.item():.5f} \n \
+                      | Val Loss: {avg_val_loss:.5f} | Mel: {loss_mel.item():.5f} | Postnet: {loss_mel_postnet.item():.5f} | Gate: {loss_gate.item():.5f} ")
 
                 # ===> [FEATURE 2] LOGIC EARLY STOPPING <===
                 if avg_val_loss < best_val_loss:
@@ -256,7 +257,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     save_name = f"checkpoint_epoch_{epoch}_chunk_{chunk_idx}.pt"
                     save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, chunk_idx, save_name, hparams)
                     print(f"Saved checkpoint: {save_name}")
-                    
+
                 model.train()
             
             if hparams.ddp_run:
