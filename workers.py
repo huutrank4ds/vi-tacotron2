@@ -232,13 +232,13 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                         v_inputs, v_truth = parse_batch_gpu(val_batch, device_id, mel_transform, hparams)
                         v_outputs = model(v_inputs)
                         v_out_len = v_inputs[3]
-                        v_loss, _, _, _ = criterion(v_outputs, v_truth, v_out_len)
+                        v_loss, v_mel, v_mel_postnet, v_gate = criterion(v_outputs, v_truth, v_out_len)
                         total_val_loss += v_loss.item()
                     val_progress.close()
                 
                 avg_val_loss = total_val_loss / len(val_set)
                 print(f"\n[Rank {rank}] Epoch {epoch} | Chunk {chunk_idx} | Train Loss: {loss.item():.5f} | Mel: {loss_mel.item():.5f} | Postnet: {loss_mel_postnet.item():.5f} | Gate: {loss_gate.item():.5f} \n \
-                      | Val Loss: {avg_val_loss:.5f} | Mel: {loss_mel.item():.5f} | Postnet: {loss_mel_postnet.item():.5f} | Gate: {loss_gate.item():.5f} ")
+                      | Val Loss: {avg_val_loss:.5f} | Mel: {v_mel.item():.5f} | Postnet: {v_mel_postnet.item():.5f} | Gate: {v_gate.item():.5f} ")
 
                 # ===> [FEATURE 2] LOGIC EARLY STOPPING <===
                 if avg_val_loss < best_val_loss:
