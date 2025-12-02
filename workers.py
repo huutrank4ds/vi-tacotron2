@@ -1,5 +1,5 @@
 import gc
-from random import random
+import random
 import torch
 from config import Hparams
 from torch.optim import AdamW
