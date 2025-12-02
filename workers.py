@@ -1,4 +1,5 @@
 import gc
+from random import random
 import torch
 from config import Hparams
 from torch.optim import AdamW
@@ -165,6 +166,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
     # --- 5. Training Loop ---
     should_stop_global = False
+    all_chunk_indices = list(range(len(hparams.dataset_chunks)))
 
     for epoch in range(global_epoch, hparams.max_epochs):
         if should_stop_global: break 
@@ -172,9 +174,16 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
         if rank == 0:
             print(f"\n{'='*30} Epoch {epoch} {'='*30}")
 
-        current_start = start_chunk_index if epoch == global_epoch else 0
+        epoch_seed = hparams.seed + epoch
+        random.seed(epoch_seed)
+
+        shuffled_chunk_indices = all_chunk_indices.copy()
+        random.shuffle(shuffled_chunk_indices)
+
+        current_list_index = start_chunk_index if epoch == global_epoch else 0
         
-        for chunk_idx in range(current_start, len(hparams.dataset_chunks)):
+        for list_idx in range(current_list_index, len(shuffled_chunk_indices)):
+            chunk_idx = shuffled_chunk_indices[list_idx]
             
             # --- Tạo DataLoader ---
             train_loader = get_trainloader_chunk(
