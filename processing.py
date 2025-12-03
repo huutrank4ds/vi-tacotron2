@@ -4,6 +4,7 @@ from config import Hparams
 from torch.nn.utils.rnn import pad_sequence
 import unicodedata
 import re
+import librosa #type: ignore
 
 class PrepareTextMel:
     """
@@ -137,6 +138,7 @@ class PrepareTextMel:
             audio_data = batch['audio'][i]
             audio_array = audio_data['array']
             original_sr = audio_data['sampling_rate']
+            audio_array, _ = librosa.effects.trim(audio_array, top_db=20)
             
             # Resample về target_sr
             audio_tensor = self.resample_audio(audio_array, original_sr)

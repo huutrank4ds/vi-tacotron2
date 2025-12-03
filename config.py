@@ -20,7 +20,7 @@ class Hparams:
     num_train_samples: int = 1043443
     text_len_threshold: int = 5  # Giới hạn độ dài text tối thiểu
     duration_min_threshold: float = 0.5  # Giới hạn độ dài audio tối thiểu (giây)
-    duration_max_threshold: float = 20.0  # Giới hạn độ dài audio tối đa (giây)
+    duration_max_threshold: float = 15.0  # Giới hạn độ dài audio tối đa (giây)
 
 
     # --- Tham số cho DDP ---
@@ -41,12 +41,12 @@ class Hparams:
     text_pad_value: int = 0
     
     # Audio
-    target_sr: int = 22050
-    n_fft: int = 2048
-    hop_length: int = 275
-    win_length: int = 1102
-    f_min: float = 125.0
-    f_max: float = 7600.0
+    target_sr: int = 16000
+    n_fft: int = 1024
+    hop_length: int = 256
+    win_length: int = 1024
+    f_min: float = 0.0
+    f_max: float = 8000.0
     mel_pad_value: float = -11.5129  # log(1e-5)
     n_mel_channels: int = 80
     stop_pad_value: float = 1.0
@@ -59,7 +59,7 @@ class Hparams:
     encoder_n_convolutions: int = 3
     encoder_kernel_size: int = 5
     encoder_embedding_dim: int = 512
-    encoder_dropout: float = 0.1
+    speaker_projection_dropout: float = 0.1
 
     # --- Prenet ---
     prenet_dim: int = 256

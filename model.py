@@ -27,7 +27,7 @@ class Tacotron2(nn.Module):
         self.speaker_projection = nn.Sequential(
             nn.Linear(hparams.speaker_embedding_dim, 256),
             nn.ReLU(),
-            nn.Dropout(hparams.encoder_dropout), # Dropout thường tắt khi inference, nhưng training cần
+            nn.Dropout(hparams.speaker_projection_dropout), # Dropout thường tắt khi inference, nhưng training cần
             nn.Linear(256, hparams.encoder_embedding_dim) 
         )
         self.init_speaker_projection_weights()
