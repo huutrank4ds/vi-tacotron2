@@ -20,7 +20,7 @@ class Hparams:
     num_train_samples: int = 1043443
     text_len_threshold: int = 5  # Giới hạn độ dài text tối thiểu
     duration_min_threshold: float = 0.5  # Giới hạn độ dài audio tối thiểu (giây)
-    duration_max_threshold: float = 15.0  # Giới hạn độ dài audio tối đa (giây)
+    duration_max_threshold: float = 20.0  # Giới hạn độ dài audio tối đa (giây)
 
 
     # --- Tham số cho DDP ---
