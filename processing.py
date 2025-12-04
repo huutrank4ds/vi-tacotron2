@@ -55,13 +55,51 @@ class PrepareTextMel:
     
     def clean_text(self, text):
         if not text: return ""
-        text = unicodedata.normalize('NFC', text)
         text = text.lower()
-        whitelist = "dứt|điểm|thi|công|phá|hỏi|than|lửng|net|com"
-        pattern = r'\bchấm\b(?!\s*(' + whitelist + '))'
+        
+        # Token tạm để bảo vệ những chữ "chấm" cần giữ lại
+        TEMP_TOKEN = " _SPECIAL_DOT_ "
+        
+        # --- BƯỚC 0: BẢO VỆ SỐ THẬP PHÂN (5 chấm 5 -> giữ nguyên) ---
+        text = re.sub(r'(\d+)\s+chấm\s+(\d+)', rf'\1{TEMP_TOKEN}\2', text)
+
+        # --- BƯỚC 1: BẢO VỆ TỪ GHÉP PHÍA TRƯỚC (Whitelist Before) ---
+        # Những từ này đứng trước "chấm" thì "chấm" là động từ/danh từ -> GIỮ NGUYÊN
+        whitelist_before = [
+            "dấu", "nước", "đồ", "bún", "rau", "muối", 
+            "bát", "chén", "đĩa", "tự", "người", "ban", 
+            "ba", "vừa", "đang"
+        ]
+        for word in whitelist_before:
+            text = re.sub(rf'\b{word}\s+chấm\b', f'{word}{TEMP_TOKEN}', text)
+
+        # --- BƯỚC 2: BẢO VỆ TỪ GHÉP PHÍA SAU (Whitelist After) ---
+        # [QUAN TRỌNG] Thêm "bài", "thi", "hết" vào đây để GIỮ NGUYÊN
+        common_words = "dứt|điểm|thi|công|bài|phá|mút|bi|tử|lượng|phạt|đầu|nương|hết|hỏi|than|lửng|phẩy"
+        domains = "com|net|vn|org|edu|gov|io|info|biz"
+        
+        # Kết hợp tất cả từ cần bảo vệ
+        whitelist_after = f"{common_words}|{domains}"
+        
+        # Logic Regex:
+        # Tìm chữ "chấm" (và khoảng trắng trước nó \s*)
+        # NHƯNG chỉ thay thế nếu phía sau nó KHÔNG PHẢI (?!) là các từ trong whitelist
+        pattern = r'\s*\bchấm\b(?!\s*(' + whitelist_after + '))'
+        
+        # Thay thế các trường hợp còn lại thành dấu "."
         text = re.sub(pattern, '.', text)
-        text = re.sub(r'\s+\.', '.', text)
-        return text
+        
+        # --- BƯỚC 3: KHÔI PHỤC ---
+        # Trả lại chữ "chấm" cho các trường hợp đã bảo vệ
+        text = text.replace(TEMP_TOKEN, " chấm ")
+
+        # --- BƯỚC 4: DỌN DẸP DẤU CÂU ---
+        text = re.sub(r'\s+\.', '.', text)   # Xóa space thừa trước dấu chấm
+        text = re.sub(r'\.\s*', '. ', text)  # Thêm space sau dấu chấm
+        text = re.sub(r'\.\s*\.', '.', text) # Fix lỗi 2 dấu chấm
+        text = re.sub(r'\s+', ' ', text)     # Fix nhiều space
+        
+        return text.strip()
 
     def text_to_sequence(self, text):
         """Chuyển đổi văn bản thành chuỗi ID"""
