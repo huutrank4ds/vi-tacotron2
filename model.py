@@ -95,7 +95,7 @@ class Tacotron2(nn.Module):
         
         # Xử lý Speaker
         # speaker_projection = self.speaker_projection(speaker_embeddings)
-        speaker_projection = F.normalize(speaker_embeddings) # Normalize L2
+        speaker_embeddings = F.normalize(speaker_embeddings) # Normalize L2
         speaker_expanded = speaker_embeddings.unsqueeze(1).expand(-1, encoder_outputs.size(1), -1)
         # ---Cộng (Broadcast)---Thay bằng nối ghép concat
         # encoder_outputs = encoder_outputs + speaker_projection.unsqueeze(1)
@@ -119,10 +119,12 @@ class Tacotron2(nn.Module):
         
         # Xử lý Speaker
         # speaker_projection = self.speaker_projection(speaker_embeddings)
-        speaker_projection = F.normalize(speaker_embeddings) 
+        # speaker_projection = F.normalize(speaker_embeddings) 
         
         encoder_outputs = self.encoder.inference(embedded_inputs)
         # encoder_outputs = encoder_outputs + speaker_projection.unsqueeze(1)
+
+        speaker_embeddings = F.normalize(speaker_embeddings) # Normalize L2
         speaker_expanded = speaker_embeddings.unsqueeze(1).expand(-1, encoder_outputs.size(1), -1)
         encoder_outputs = torch.cat((encoder_outputs, speaker_expanded), dim=-1)
         
