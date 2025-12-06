@@ -223,14 +223,12 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                                       'Mel': f"{loss_mel.item():.4f}",
                                       'Postnet': f"{loss_mel_postnet.item():.4f}",
                                       'Gate': f"{loss_gate.item():.4f}"}) # type: ignore
-            if rank == 0:
-                pbar.close() # type: ignore
-                del pbar
+       
             # --- VALIDATION ---
+            stop_signal = torch.tensor(0).to(device_id) # 0: Continue, 1: Stop
             if hparams.ddp_run:
                 dist.barrier()
-
-            stop_signal = torch.tensor(0).to(device_id) # 0: Continue, 1: Stop
+            
             # Chỉ Rank 0 thực hiện tính toán Validation
             if rank == 0 and val_set is not None:
                 model.eval()
@@ -277,6 +275,11 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 should_stop_global = True
                 if rank == 0:
                     print("Master requested stop. Stopping all workers...")
+
+            del train_loader
+            if 'pbar' in locals(): del pbar
+            gc.collect()
+            torch.cuda.empty_cache()
             
             # Barrier lần nữa để đảm bảo tất cả cùng thoát hoặc cùng tiếp tục
             if hparams.ddp_run:
