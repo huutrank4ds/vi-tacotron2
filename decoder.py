@@ -48,7 +48,7 @@ class Decoder(nn.Module):
         #     hparams.decoder_rnn_dim, bias=True)
 
         self.decoder_rnn = nn.LSTMCell(
-            hparams.attention_rnn_dim + self.memory_dim,
+            hparams.attention_rnn_dim + self.memory_dim + hparams.speaker_embedding_dim,
             hparams.decoder_rnn_dim, bias=True)
 
         # self.linear_projection = LinearNorm(
