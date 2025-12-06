@@ -130,7 +130,7 @@ class Tacotron2(nn.Module):
         
 
         mel_outputs, gate_outputs, alignments = self.decoder.inference(
-            encoder_outputs, speaker_embedding=speaker_embeddings)
+            encoder_outputs, speaker_embeddings=speaker_embeddings)
 
         mel_outputs_postnet = self.postnet(mel_outputs)
         mel_outputs_postnet = mel_outputs + mel_outputs_postnet

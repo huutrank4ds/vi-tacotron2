@@ -82,7 +82,7 @@ class Decoder(nn.Module):
                                      self.n_mel_channels * self.n_frames_per_step)
         return decoder_input
 
-    def initialize_decoder_states(self, memory, mask, speaker_embedding):
+    def initialize_decoder_states(self, memory, mask, speaker_embeddings):
         """ Initializes attention rnn states, decoder rnn states, attention
         weights, attention cumulative weights, attention context, stores memory
         and stores processed memory
@@ -108,7 +108,7 @@ class Decoder(nn.Module):
         self.memory = memory
         self.processed_memory = self.attention_layer.memory_layer(memory)
         self.mask = mask
-        self.speaker_embedding = speaker_embedding
+        self.speaker_embeddings = speaker_embeddings
 
     def parse_decoder_inputs(self, decoder_inputs):
         """ Prepares decoder inputs, i.e. mel outputs
@@ -177,7 +177,7 @@ class Decoder(nn.Module):
         # decoder_input = torch.cat(
         #     (self.attention_hidden, self.attention_context), -1)
         decoder_input = torch.cat(
-            (self.attention_hidden, self.attention_context, self.speaker_embedding), -1)
+            (self.attention_hidden, self.attention_context, self.speaker_embeddings), -1)
         self.decoder_hidden, self.decoder_cell = self.decoder_rnn(
             decoder_input, (self.decoder_hidden, self.decoder_cell))
         self.decoder_hidden = F.dropout(
@@ -191,7 +191,7 @@ class Decoder(nn.Module):
         gate_prediction = self.gate_layer(decoder_hidden_attention_context)
         return decoder_output, gate_prediction, self.attention_weights
 
-    def forward(self, memory, decoder_inputs, memory_lengths, speaker_embedding):
+    def forward(self, memory, decoder_inputs, memory_lengths, speaker_embeddings):
         """ Decoder forward pass for training
         PARAMS
         ------
@@ -212,7 +212,7 @@ class Decoder(nn.Module):
         decoder_inputs = self.prenet(decoder_inputs)
 
         self.initialize_decoder_states(
-            memory, mask=~get_mask_from_lengths(memory_lengths), speaker_embedding=speaker_embedding)
+            memory, mask=~get_mask_from_lengths(memory_lengths), speaker_embeddings=speaker_embeddings)
 
         mel_outputs, gate_outputs, alignments = [], [], []
         while len(mel_outputs) < decoder_inputs.size(0) - 1:
@@ -228,9 +228,9 @@ class Decoder(nn.Module):
 
         return mel_outputs, gate_outputs, alignments
 
-    def inference(self, memory, speaker_embedding):
+    def inference(self, memory, speaker_embeddings):
         decoder_input = self.get_go_frame(memory)
-        self.initialize_decoder_states(memory, mask=None, speaker_embedding=speaker_embedding)
+        self.initialize_decoder_states(memory, mask=None, speaker_embeddings=speaker_embeddings)
         mel_outputs, gate_outputs, alignments = [], [], []
 
         while True:
