@@ -24,20 +24,20 @@ class Tacotron2(nn.Module):
         self.decoder = Decoder(hparams)
         self.postnet = Postnet(hparams)
 
-        self.speaker_projection = nn.Sequential(
-            nn.Linear(hparams.speaker_embedding_dim, 256),
-            nn.ReLU(),
-            nn.Dropout(hparams.speaker_projection_dropout), # Dropout thường tắt khi inference, nhưng training cần
-            nn.Linear(256, hparams.encoder_embedding_dim) 
-        )
-        self.init_speaker_projection_weights()
+        # self.speaker_projection = nn.Sequential(
+        #     nn.Linear(hparams.speaker_embedding_dim, 256),
+        #     nn.ReLU(),
+        #     nn.Dropout(hparams.speaker_projection_dropout), # Dropout thường tắt khi inference, nhưng training cần
+        #     nn.Linear(256, hparams.encoder_embedding_dim) 
+        # )
+        # self.init_speaker_projection_weights()
 
-    def init_speaker_projection_weights(self):
-        for module in self.speaker_projection.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
-                if module.bias is not None:
-                    nn.init.constant_(module.bias, 0.0)
+    # def init_speaker_projection_weights(self):
+    #     for module in self.speaker_projection.modules():
+    #         if isinstance(module, nn.Linear):
+    #             nn.init.xavier_uniform_(module.weight)
+    #             if module.bias is not None:
+    #                 nn.init.constant_(module.bias, 0.0)
 
     def parse_batch(self, batch, rank):
         # Hàm này hiện tại có thể không dùng nếu bạn dùng parse_batch_gpu trong worker
@@ -94,14 +94,15 @@ class Tacotron2(nn.Module):
         encoder_outputs = self.encoder(embedded_inputs, text_lengths)
         
         # Xử lý Speaker
-        speaker_projection = self.speaker_projection(speaker_embeddings)
-        speaker_projection = F.normalize(speaker_projection) # Normalize L2
-        
-        # Cộng (Broadcast)
-        encoder_outputs = encoder_outputs + speaker_projection.unsqueeze(1)
+        # speaker_projection = self.speaker_projection(speaker_embeddings)
+        speaker_projection = F.normalize(speaker_embeddings) # Normalize L2
+        speaker_expanded = speaker_embeddings.unsqueeze(1).expand(-1, encoder_outputs.size(1), -1)
+        # ---Cộng (Broadcast)---Thay bằng nối ghép concat
+        # encoder_outputs = encoder_outputs + speaker_projection.unsqueeze(1)
+        encoder_outputs = torch.cat((encoder_outputs, speaker_expanded), dim=-1)
 
         mel_outputs, gate_outputs, alignments = self.decoder(
-            encoder_outputs, mels, memory_lengths=text_lengths)
+            encoder_outputs, mels, memory_lengths=text_lengths, speaker_embeddings=speaker_embeddings)
 
         mel_outputs_postnet = self.postnet(mel_outputs)
         mel_outputs_postnet = mel_outputs + mel_outputs_postnet
@@ -117,16 +118,17 @@ class Tacotron2(nn.Module):
         embedded_inputs = self.embedding(text_inputs).transpose(1, 2)
         
         # Xử lý Speaker
-        speaker_projection = self.speaker_projection(speaker_embeddings)
+        # speaker_projection = self.speaker_projection(speaker_embeddings)
+        speaker_projection = F.normalize(speaker_embeddings) 
         
-        # [FIX QUAN TRỌNG] Phải Normalize giống hệt Forward
-        speaker_projection = F.normalize(speaker_projection) 
-
         encoder_outputs = self.encoder.inference(embedded_inputs)
-        encoder_outputs = encoder_outputs + speaker_projection.unsqueeze(1)
+        # encoder_outputs = encoder_outputs + speaker_projection.unsqueeze(1)
+        speaker_expanded = speaker_embeddings.unsqueeze(1).expand(-1, encoder_outputs.size(1), -1)
+        encoder_outputs = torch.cat((encoder_outputs, speaker_expanded), dim=-1)
+        
 
         mel_outputs, gate_outputs, alignments = self.decoder.inference(
-            encoder_outputs)
+            encoder_outputs, speaker_embedding=speaker_embeddings)
 
         mel_outputs_postnet = self.postnet(mel_outputs)
         mel_outputs_postnet = mel_outputs + mel_outputs_postnet
