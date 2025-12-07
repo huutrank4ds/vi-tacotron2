@@ -128,7 +128,9 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
     criterion = Tacotron2Loss().to(device_id)
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
-    scaler = torch.amp.GradScaler('cuda', enabled=hparams.fp16_run) #type: ignore
+
+    use_scaler = hparams.fp16_run and torch.cuda.get_device_capability()[0] < 8
+    scaler = torch.amp.GradScaler('cuda', enabled=use_scaler) #type: ignore
 
     # --- 3. Load Checkpoint ---
     global_epoch = 0 
@@ -217,11 +219,17 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     output_length = model_inputs[3]
                     loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
 
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                scaler.step(optimizer)
-                scaler.update()
+                if use_scaler:
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    # Chạy BF16 thuần túy (Nhanh & Tiết kiệm VRAM nhất cho H100)
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
                 
                 if rank == 0:
                     pbar.set_postfix({'Loss': f"{loss.item():.4f}", # type: ignore
