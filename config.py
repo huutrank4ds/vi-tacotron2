@@ -30,7 +30,7 @@ class Hparams:
 
     # --- Các tham số khác ---
     mask_padding: bool = True
-    fp16_run: bool = False
+    fp16_run: bool = True  # Sử dụng mixed precision training
     n_frames_per_step: int = 2 # Rất quan trọng cho Decoder
     num_cpu : int = 4  # Số worker cho DataLoader
     

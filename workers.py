@@ -14,7 +14,7 @@ from datetime import timedelta
 import builtins
 from processing import PrepareTextMel, CollateTextMel
 from utils import to_gpu, load_checkpoint_chunk
-
+from torch.cuda.amp import autocast, GradScaler
 
 # Override print để luôn flush output
 if not hasattr(builtins, "original_print_safe"):
@@ -128,6 +128,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
     criterion = Tacotron2Loss().to(device_id)
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
+    scaler = GradScaler(enabled=hparams.fp16_run)
 
     # --- 3. Load Checkpoint ---
     global_epoch = 0 
@@ -211,12 +212,16 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
             for i, batch in enumerate(pbar):
                 optimizer.zero_grad()
                 model_inputs, ground_truth = parse_batch_gpu(batch, device_id, mel_transform, hparams)
-                model_outputs = model(model_inputs)
-                output_length = model_inputs[3]
-                loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
-                loss.backward()
-                # torch.nn.utils.clip_grad_norm_(model.parameters(), hparams.grad_clip_thresh)
-                optimizer.step()
+                with autocast(dtype=torch.bfloat16, enabled=hparams.fp16_run):
+                    model_outputs = model(model_inputs)
+                    output_length = model_inputs[3]
+                    loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
+
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                scaler.step(optimizer)
+                scaler.update()
                 
                 if rank == 0:
                     pbar.set_postfix({'Loss': f"{loss.item():.4f}", # type: ignore
@@ -239,9 +244,10 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     val_progress = tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1)
                     for val_batch in val_progress:
                         v_inputs, v_truth = parse_batch_gpu(val_batch, device_id, mel_transform, hparams)
-                        v_outputs = model(v_inputs)
-                        v_out_len = v_inputs[3]
-                        v_loss, v_mel, v_mel_postnet, v_gate = criterion(v_outputs, v_truth, v_out_len)
+                        with autocast(dtype=torch.bfloat16, enabled=hparams.fp16_run):
+                            v_outputs = model(v_inputs)
+                            v_out_len = v_inputs[3]
+                            v_loss, v_mel, v_mel_postnet, v_gate = criterion(v_outputs, v_truth, v_out_len)
                         total_val_loss += v_loss.item()
                     val_progress.close()
                 
