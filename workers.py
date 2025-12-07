@@ -223,9 +223,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                                       'Mel': f"{loss_mel.item():.4f}",
                                       'Postnet': f"{loss_mel_postnet.item():.4f}",
                                       'Gate': f"{loss_gate.item():.4f}"}) # type: ignore
-            if rank == 0:
-                pbar.close() # type: ignore
-                del pbar
+
             # --- VALIDATION ---
             if hparams.ddp_run:
                 dist.barrier()
@@ -235,6 +233,8 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
             if rank == 0 and val_set is not None:
                 model.eval()
                 total_val_loss = 0.0
+                pbar.close() # Đóng pbar của train_loader trước khi mở pbar mới #type: ignore
+
                 with torch.no_grad():
                     val_progress = tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1)
                     for val_batch in val_progress:
@@ -278,10 +278,20 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 if rank == 0:
                     print("Master requested stop. Stopping all workers...")
             
+            del train_loader
+            if 'pbar' in locals(): del pbar # Xóa biến pbar nếu rank khác 0 có dùng
+            if 'train_loader_iter' in locals(): del train_loader_iter
+
+            gc.collect()
+            torch.cuda.empty_cache()
+            
             # Barrier lần nữa để đảm bảo tất cả cùng thoát hoặc cùng tiếp tục
             if hparams.ddp_run:
                 dist.barrier()
 
+            if should_stop_global:
+                break
+            
         start_chunk_index = 0
 
     if hparams.ddp_run:
