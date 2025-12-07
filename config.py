@@ -87,7 +87,7 @@ class Hparams:
     weight_decay: float = 1e-6
     batch_size: int = 32
     checkpoint_path: str = "checkpoints/"
-    name_file_checkpoint: str = "checkpoint_step_1000.pt"
+    name_file_checkpoint: str = "checkpoint_vi_tacotron2"
     val_interval: int = 100
     log_interval: int = 100
     seed: int = 42

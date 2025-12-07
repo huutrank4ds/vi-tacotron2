@@ -254,18 +254,18 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     best_val_loss = avg_val_loss
                     patience_counter = 0
                     # Lưu best model
-                    save_name = f"checkpoint_epoch_{epoch}_chunk_{list_idx}_best.pt"
+                    save_name = f"{hparams.name_file_checkpoint}_best.pt"
                     save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
-                    print(f"Saved NEW BEST model: {save_name}")
+                    print(f"Saved NEW BEST model at epoch {epoch}, chunk {list_idx}: {save_name}")
                 else:
                     patience_counter += 1
                     if patience_counter >= hparams.early_stopping_patience:
                         print(f"==> EARLY STOPPING TRIGGERED at epoch {epoch}, chunk {list_idx}!")
                         stop_signal = torch.tensor(1).to(device_id) # Bật tín hiệu dừng
                     print(f"Best Val Loss remains: {best_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
-                    save_name = f"checkpoint_epoch_{epoch}_chunk_{list_idx}.pt"
+                    save_name = f"{hparams.name_file_checkpoint}_last.pt"
                     save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
-                    print(f"Saved checkpoint: {save_name}")
+                    print(f"Saved checkpoint at epoch {epoch}, chunk {list_idx}: {save_name}")
 
                 model.train()
             
