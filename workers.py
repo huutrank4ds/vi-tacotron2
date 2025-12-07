@@ -131,6 +131,10 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
     use_scaler = hparams.fp16_run and torch.cuda.get_device_capability()[0] < 8
     scaler = torch.amp.GradScaler('cuda', enabled=use_scaler) #type: ignore
+    if use_scaler:
+        print(f"[Rank {rank}] Using GradScaler for mixed precision training.")
+    else:
+        print(f"[Rank {rank}] Using pure BF16 training without GradScaler.")
 
     # --- 3. Load Checkpoint ---
     global_epoch = 0 
