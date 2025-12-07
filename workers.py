@@ -4,7 +4,7 @@ import torch
 from config import Hparams
 from torch.optim import AdamW
 import torch.distributed as dist
-from dataloader import get_trainloader_valset, get_trainloader_chunk, load_speaker_embeddings, get_valloader
+from dataloader import get_trainloader_valset, get_trainloader_chunk, load_speaker_embeddings, get_valloader, remove_chunk_cache
 from model import Tacotron2
 from loss import Tacotron2Loss
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -223,16 +223,18 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                                       'Mel': f"{loss_mel.item():.4f}",
                                       'Postnet': f"{loss_mel_postnet.item():.4f}",
                                       'Gate': f"{loss_gate.item():.4f}"}) # type: ignore
-       
+
             # --- VALIDATION ---
-            stop_signal = torch.tensor(0).to(device_id) # 0: Continue, 1: Stop
             if hparams.ddp_run:
                 dist.barrier()
-            
+
+            stop_signal = torch.tensor(0).to(device_id) # 0: Continue, 1: Stop
             # Chỉ Rank 0 thực hiện tính toán Validation
             if rank == 0 and val_set is not None:
                 model.eval()
                 total_val_loss = 0.0
+                pbar.close() # Đóng pbar của train_loader trước khi mở pbar mới #type: ignore
+
                 with torch.no_grad():
                     val_progress = tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1)
                     for val_batch in val_progress:
@@ -263,7 +265,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     print(f"Best Val Loss remains: {best_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
                     save_name = f"{hparams.name_file_checkpoint}_last.pt"
                     save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
-                    print(f"Saved checkpoint epoch {epoch}, chunk {list_idx}: {save_name}")
+                    print(f"Saved checkpoint at epoch {epoch}, chunk {list_idx}: {save_name}")
 
                 model.train()
             
@@ -275,9 +277,11 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 should_stop_global = True
                 if rank == 0:
                     print("Master requested stop. Stopping all workers...")
-
+            
             del train_loader
-            if 'pbar' in locals(): del pbar
+            if 'pbar' in locals(): del pbar # Xóa biến pbar nếu rank khác 0 có dùng
+            if 'train_loader_iter' in locals(): del train_loader_iter
+
             gc.collect()
             torch.cuda.empty_cache()
             
@@ -285,6 +289,9 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
             if hparams.ddp_run:
                 dist.barrier()
 
+            if should_stop_global:
+                break
+            
         start_chunk_index = 0
 
     if hparams.ddp_run:
