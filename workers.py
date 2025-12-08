@@ -15,6 +15,7 @@ import builtins
 from processing import PrepareTextMel, CollateTextMel
 from utils import to_gpu, load_checkpoint_chunk
 import torch.amp
+import time
 
 # Override print để luôn flush output
 if not hasattr(builtins, "original_print_safe"):
@@ -216,34 +217,52 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                             unit="batch", 
                             position=0)
             else:
-                pbar = train_loader_iter
+                pbar = None
+            
+            # --- Bắt đầu Chunk ---
+            try:
+                while True:
+                    if should_stop_global:
+                        break
+                    try:
+                        batch = next(train_loader_iter)
+                    except StopIteration:
+                        break
 
-            for i, batch in enumerate(pbar):
-                optimizer.zero_grad()
-                model_inputs, ground_truth = parse_batch_gpu(batch, device_id, mel_transform, hparams)
-                with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=hparams.fp16_run): #type: ignore
-                    model_outputs = model(model_inputs)
-                    output_length = model_inputs[3]
-                    loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
-
-                if use_scaler:
-                    scaler.scale(loss).backward()
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    # Chạy BF16 thuần túy (Nhanh & Tiết kiệm VRAM nhất cho H100)
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                    optimizer.step()
-                
-                if rank == 0:
-                    pbar.set_postfix({'Loss': f"{loss.item():.4f}", # type: ignore
-                                      'Mel': f"{loss_mel.item():.4f}",
-                                      'Postnet': f"{loss_mel_postnet.item():.4f}",
-                                      'Gate': f"{loss_gate.item():.4f}"}) # type: ignore
-
+                    optimizer.zero_grad()
+                    model_inputs, ground_truth = parse_batch_gpu(batch, device_id, mel_transform, hparams)
+                    with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=hparams.fp16_run): #type: ignore
+                        model_outputs = model(model_inputs)
+                        output_length = model_inputs[3]
+                        loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
+                    if use_scaler:
+                        scaler.scale(loss).backward()
+                        scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                        scaler.step(optimizer)
+                        scaler.update()
+                    else:
+                        # Chạy BF16 thuần túy (Nhanh & Tiết kiệm VRAM nhất cho H100)
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                        optimizer.step()
+                    if rank == 0 and pbar is not None:
+                        pbar.update(1)
+                        pbar.set_postfix({'Loss': f"{loss.item():.4f}", # type: ignore
+                                          'Mel': f"{loss_mel.item():.4f}",
+                                          'Postnet': f"{loss_mel_postnet.item():.4f}",
+                                          'Gate': f"{loss_gate.item():.4f}"}) # type: ignore
+            finally:
+                if rank == 0 and pbar is not None:
+                    pbar.close()
+                if 'train_loader_iter' in locals():
+                    del train_loader_iter
+                if 'train_loader' in locals():
+                    del train_loader
+                gc.collect()
+                torch.cuda.empty_cache()
+                time.sleep(1)
+            # --- Kết thúc Chunk ---
             # --- VALIDATION ---
             if hparams.ddp_run:
                 dist.barrier()
@@ -282,7 +301,6 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     patience_counter += 1
                     if patience_counter >= hparams.early_stopping_patience:
                         print(f"==> EARLY STOPPING TRIGGERED at epoch {epoch}, chunk {list_idx}!")
-                        stop_signal = torch.tensor(1).to(device_id) # Bật tín hiệu dừng
                     print(f"Best Val Loss remains: {best_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
                     save_name = f"checkpoint_vi_tacotron2_last.pt"
                     save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
@@ -298,19 +316,6 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 should_stop_global = True
                 if rank == 0:
                     print("Master requested stop. Stopping all workers...")
-            
-            if rank == 0 and hasattr(pbar, 'close'):
-                pbar.close() # Đóng pbar của train_loader nếu còn mở #type: ignore
-
-            # Hủy Iterator trước
-            if 'train_loader_iter' in locals():
-                del train_loader_iter
-            # Hủy DataLoader
-            if 'train_loader' in locals():
-                del train_loader
-            # Force Garbage Collection
-            gc.collect()
-            torch.cuda.empty_cache()
             
             # Barrier lần nữa để đảm bảo tất cả cùng thoát hoặc cùng tiếp tục
             if hparams.ddp_run:

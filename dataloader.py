@@ -127,7 +127,7 @@ def get_trainloader_chunk(
         batch_size=hparams.batch_size,
         shuffle=False,
         num_workers=0,
-        pin_memory=False,     # Tốt cho GPU training
+        pin_memory=False,     
         collate_fn=collate_fn,
     )
     print(f"[Rank {rank}] DataLoader for chunk {index} created.")
