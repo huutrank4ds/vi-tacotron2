@@ -35,7 +35,7 @@ def get_valloader(hparams: Hparams, prepare_text_mel_val, collate_fn):
         batch_size=hparams.batch_size,
         collate_fn=collate_fn,
         num_workers=2,
-        pin_memory=True,
+        pin_memory=False,
         shuffle=False # Validation không cần shuffle
     )
     return valloader
@@ -127,7 +127,7 @@ def get_trainloader_chunk(
         batch_size=hparams.batch_size,
         shuffle=False,
         num_workers=0,
-        pin_memory=True,     # Tốt cho GPU training
+        pin_memory=False,     # Tốt cho GPU training
         collate_fn=collate_fn,
     )
     print(f"[Rank {rank}] DataLoader for chunk {index} created.")

@@ -165,7 +165,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
     collate_fn = CollateTextMel(hparams)
 
     # mel_transform dùng chung cho cả Train và Val, và cho tất cả các Batch
-    mel_transform = prepare_text_mel_train.get_mel_transform(hparams).to(device_id)
+    mel_transform = prepare_text_mel_train.mel_transform.to(device_id)
 
     # Validation Set (Chỉ Rank 0)
     val_set = None
@@ -275,7 +275,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     best_val_loss = avg_val_loss
                     patience_counter = 0
                     # Lưu best model
-                    save_name = f"{hparams.name_file_checkpoint}_best.pt"
+                    save_name = f"checkpoint_vi_tacotron2_best.pt"
                     save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
                     print(f"Saved NEW BEST model at epoch {epoch}, chunk {list_idx}: {save_name}")
                 else:
@@ -284,7 +284,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                         print(f"==> EARLY STOPPING TRIGGERED at epoch {epoch}, chunk {list_idx}!")
                         stop_signal = torch.tensor(1).to(device_id) # Bật tín hiệu dừng
                     print(f"Best Val Loss remains: {best_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
-                    save_name = f"{hparams.name_file_checkpoint}_last.pt"
+                    save_name = f"checkpoint_vi_tacotron2_last.pt"
                     save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
                     print(f"Saved checkpoint at epoch {epoch}, chunk {list_idx}: {save_name}")
 
@@ -299,10 +299,16 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 if rank == 0:
                     print("Master requested stop. Stopping all workers...")
             
-            del train_loader
-            if 'pbar' in locals(): del pbar # Xóa biến pbar nếu rank khác 0 có dùng
-            if 'train_loader_iter' in locals(): del train_loader_iter
+            if rank == 0 and hasattr(pbar, 'close'):
+                pbar.close() # Đóng pbar của train_loader nếu còn mở #type: ignore
 
+            # Hủy Iterator trước
+            if 'train_loader_iter' in locals():
+                del train_loader_iter
+            # Hủy DataLoader
+            if 'train_loader' in locals():
+                del train_loader
+            # Force Garbage Collection
             gc.collect()
             torch.cuda.empty_cache()
             
