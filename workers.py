@@ -142,6 +142,9 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
     start_chunk_index = 0 
     best_val_loss = float('inf')
     patience_counter = 0  
+    
+    if not os.path.exists(hparams.checkpoint_path):
+        os.makedirs(hparams.checkpoint_path)
 
     path_to_checkpoint = os.path.join(hparams.checkpoint_path, hparams.name_file_checkpoint)
     if os.path.exists(path_to_checkpoint):
