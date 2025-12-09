@@ -6,3 +6,4 @@ __pycache__/
 indexs/*.pt
 train-tacotron2-for-vi.ipynb
 data/
+history.csv
