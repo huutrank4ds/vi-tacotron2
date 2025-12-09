@@ -306,8 +306,8 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 avg_val_post = total_val_post / len(val_set)
                 avg_val_gate = total_val_gate / len(val_set)
 
-                print(f"\n[Rank {rank}] Epoch {epoch} | Chunk {list_idx} | Train Loss: {avg_train_loss:.5f} \n"
-                      f"   | Val Loss: {avg_val_loss:.5f} | Mel: {avg_val_mel:.5f} | Post: {avg_val_post:.5f} | Gate: {avg_val_gate:.5f}")
+                print(f"\n[Rank {rank}] Epoch {epoch} | Chunk {list_idx} | Train Loss: {avg_train_loss:.5f}, Train_Mel: {avg_train_mel:.5f}, Train_Post: {avg_train_post:.5f}, Train_Gate: {avg_train_gate:.5f} \n"
+                      f"| Val Loss: {avg_val_loss:.5f} | Mel: {avg_val_mel:.5f} | Post: {avg_val_post:.5f} | Gate: {avg_val_gate:.5f}")
 
                 # [NEW] Ghi vào CSV
                 with open(log_file, mode='a', newline='') as f:
