@@ -260,7 +260,9 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     num_train_batches += 1
                     
                     pbar.set_postfix({'Loss': f"{loss.item():.4f}",  #type: ignore
-                                      'Mel': f"{loss_mel.item():.4f}"})
+                                      'Mel': f"{loss_mel.item():.4f}",
+                                      'Postnet': f"{loss_mel_postnet.item():.4f}",
+                                      'Gate': f"{loss_gate.item():.4f}"})
 
             # --- VALIDATION ---
             if hparams.ddp_run:
