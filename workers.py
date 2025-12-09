@@ -223,7 +223,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 total_samples = hparams.metadata.get(chunk_idx + 1, 0)
                 total_steps = (total_samples + global_batch_size - 1) // global_batch_size
                 pbar = tqdm(train_loader, 
-                            desc=f"Epoch {epoch}|Chunk {chunk_idx} (Real: {chunk_idx})", 
+                            desc=f"Epoch {epoch}|Chunk {list_idx} (Real: {chunk_idx})", 
                             total=total_steps, 
                             unit="batch", 
                             position=0)
