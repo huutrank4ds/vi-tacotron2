@@ -136,6 +136,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
 
     use_scaler = hparams.fp16_run and torch.cuda.get_device_capability()[0] < 8
     scaler = torch.amp.GradScaler('cuda', enabled=use_scaler) #type: ignore
+    dtype_run = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
  
     # --- 3. Load Checkpoint ---
     global_epoch = 0 
@@ -234,7 +235,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 optimizer.zero_grad()
                 model_inputs, ground_truth = parse_batch_gpu(batch, device_id, mel_transform, hparams)
                 
-                with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=hparams.fp16_run): #type: ignore
+                with torch.amp.autocast(device_type='cuda', dtype=dtype_run, enabled=hparams.fp16_run): #type: ignore
                     model_outputs = model(model_inputs)
                     output_length = model_inputs[3]
                     loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
@@ -284,7 +285,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     val_progress = tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1)
                     for val_batch in val_progress:
                         v_inputs, v_truth = parse_batch_gpu(val_batch, device_id, mel_transform, hparams)
-                        with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=hparams.fp16_run): #type: ignore
+                        with torch.amp.autocast(device_type='cuda', dtype=dtype_run, enabled=hparams.fp16_run): #type: ignore
                             v_outputs = model(v_inputs)
                             v_out_len = v_inputs[3]
                             v_loss, v_mel, v_mel_postnet, v_gate = criterion(v_outputs, v_truth, v_out_len)
