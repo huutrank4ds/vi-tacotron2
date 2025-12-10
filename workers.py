@@ -323,13 +323,13 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
                     patience_counter = 0
-                    save_name = f"{base_name}_best.pt"
-                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx + 1, save_name, hparams)
+                    save_name = f"checkpoint_vi_tacotron2_best.pt"
+                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
                     print(f"Saved NEW BEST model: {save_name}")
                 else:
                     patience_counter += 1
-                    save_name = f"{base_name}_last.pt"
-                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx + 1, save_name, hparams)
+                    save_name = f"checkpoint_vi_tacotron2_last.pt"
+                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
                     print(f"Saved Last Checkpoint: {save_name}")
 
                     if patience_counter >= hparams.early_stopping_patience:
@@ -360,9 +360,9 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
         # --- [NEW] KẾT THÚC EPOCH ---
         if rank == 0 and not should_stop_global:
             # Lưu Checkpoint Epoch riêng (để backup)
-            epoch_save_name = f"checkpoint_epoch_{epoch}.pt"
+            epoch_save_name = f"checkpoint_vi_tacotron2_epoch_{epoch}.pt"
             # Lưu chunk_index = 0 để lần sau load lên biết là bắt đầu epoch mới
-            save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch + 1, 0, epoch_save_name, hparams)
+            save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, len(hparams.dataset_chunks) - 1, epoch_save_name, hparams)
             print(f"[Epoch Checkpoint] Saved: {epoch_save_name}")
 
         start_chunk_index = 0
