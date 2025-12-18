@@ -4,7 +4,7 @@ import torch
 from config import Hparams
 from torch.optim import AdamW
 import torch.distributed as dist
-from dataloader import get_trainloader_valset, get_trainloader_chunk, load_speaker_embeddings, get_valloader, remove_chunk_cache
+from dataloader import get_trainloader_valset, get_trainloader_chunk, load_speaker_embeddings, get_valloader
 from model import Tacotron2
 from loss import Tacotron2Loss
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -44,9 +44,6 @@ def init_distributed_training(rank, world_size, hparams: Hparams):
     print(f"[Rank {rank}] DDP initialized on GPU {rank % torch.cuda.device_count()}.")
 
 def parse_batch_gpu(batch, device, mel_transform, hparams):
-    # Helper chuyển GPU (dùng hàm của bạn)
-    # Lưu ý: device ở đây chính là rank (int) hoặc device object đều được
-    
     # 1. Load dữ liệu
     text_padded = to_gpu(batch['text_inputs'], device).long()
     input_lengths = to_gpu(batch['text_lengths'], device).long()
@@ -158,7 +155,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
             start_chunk_index = chunk_index + 1
         print(f"[Rank {rank}] Resumed: Epoch {global_epoch}, Chunk {start_chunk_index}")
 
-    # --- [NEW] Init CSV Logger (Chỉ Rank 0) ---
+    # --- Init CSV Logger (Chỉ Rank 0) ---
     log_file = os.path.join(hparams.checkpoint_path, "training_log.csv")
     if rank == 0:
         if not os.path.exists(log_file):
@@ -200,6 +197,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
         
         for list_idx in range(current_list_index, len(shuffled_chunk_indices)):
             chunk_idx = shuffled_chunk_indices[list_idx]
+            chunk_name = hparams.dataset_chunks[chunk_idx]
             
             # --- Tạo DataLoader ---
             train_loader = get_trainloader_chunk(
@@ -212,7 +210,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
             model.train()
             train_loader_iter = iter(train_loader)
             
-            # [NEW] Biến tích lũy loss cho chunk này
+            # Biến tích lũy loss cho chunk này
             total_train_loss = 0.0
             total_train_mel = 0.0
             total_train_post = 0.0
@@ -224,7 +222,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 total_samples = hparams.metadata.get(chunk_idx + 1, 0)
                 total_steps = (total_samples + global_batch_size - 1) // global_batch_size
                 pbar = tqdm(train_loader, 
-                            desc=f"Epoch {epoch}| Chunk {list_idx} (Real: {chunk_idx})", 
+                            desc=f"Epoch {epoch}| Chunk {list_idx} (Real: {chunk_name})", 
                             total=total_steps, 
                             unit="batch", 
                             position=0)
@@ -251,7 +249,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     optimizer.step()
                 
-                # [NEW] Tích lũy loss (chỉ cần lấy ở rank 0 hoặc reduce nếu muốn chính xác tuyệt đối)
+                # Tích lũy loss (chỉ cần lấy ở rank 0)
                 # Ở đây lấy local loss của rank 0 làm đại diện cho nhanh
                 if rank == 0:
                     total_train_loss += loss.item()
@@ -275,7 +273,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 pbar.close() #type: ignore
                 model.eval() 
                 
-                # [NEW] Biến tích lũy Val Loss
+                # Biến tích lũy Val Loss
                 total_val_loss = 0.0
                 total_val_mel = 0.0
                 total_val_post = 0.0
@@ -310,16 +308,14 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 print(f"\n[Rank {rank}] Epoch {epoch} | Chunk {list_idx} | Train Loss: {avg_train_loss:.5f}, Train_Mel: {avg_train_mel:.5f}, Train_Post: {avg_train_post:.5f}, Train_Gate: {avg_train_gate:.5f} \n"
                       f"| Val Loss: {avg_val_loss:.5f} | Mel: {avg_val_mel:.5f} | Post: {avg_val_post:.5f} | Gate: {avg_val_gate:.5f}")
 
-                # [NEW] Ghi vào CSV
+                # Ghi vào CSV
                 with open(log_file, mode='a', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow([epoch, list_idx, chunk_idx, 
+                    writer.writerow([epoch, list_idx, chunk_name, 
                                      avg_train_loss, avg_train_mel, avg_train_post, avg_train_gate,
                                      avg_val_loss, avg_val_mel, avg_val_post, avg_val_gate])
 
                 # Checkpoint & Early Stopping
-                base_name = hparams.name_file_checkpoint.replace(".pt", "")
-                
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
                     patience_counter = 0

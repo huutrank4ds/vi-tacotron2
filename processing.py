@@ -219,8 +219,10 @@ class PrepareTextMel:
             
             # Fallback: Nếu không tìm thấy hoặc lỗi, dùng vector 0
             if speaker_embedding is None:
-                print(f"Warning: Speaker '{speaker_name}' not found. Using zero vector.")
-                speaker_embedding = torch.zeros(self.hparams.speaker_embedding_dim, dtype=torch.float32)
+                print(f"Warning: Speaker '{speaker_name}' not found. Remove this sample!")
+                # speaker_embedding = torch.zeros(self.hparams.speaker_embedding_dim, dtype=torch.float32)
+                continue
+
 
             # --- 5. Thêm vào danh sách ---
             text_inputs_list.append(text_seq)
