@@ -197,7 +197,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
         
         for list_idx in range(current_list_index, len(shuffled_chunk_indices)):
             chunk_idx = shuffled_chunk_indices[list_idx]
-            chunk_name = hparams.dataset_chunks[chunk_idx]
+            chunk_name = os.path.basename(hparams.dataset_chunks[chunk_idx])
             
             # --- Tạo DataLoader ---
             train_loader = get_trainloader_chunk(
