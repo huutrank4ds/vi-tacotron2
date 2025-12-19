@@ -1,10 +1,12 @@
 import torch
 import torch.nn as nn
 from utils import get_mask_from_lengths
+import math
 
 class Tacotron2Loss(nn.Module):
-    def __init__(self, pos_weight=10.0, guided_sigma=0.2):
+    def __init__(self, n_frame_per_step, pos_weight=10.0, guided_sigma=0.2):
         super(Tacotron2Loss, self).__init__()
+        self.r = n_frame_per_step
         # Dùng MSELoss (reduction='none' để tính từng phần tử)
         self.mel_loss_fn = nn.MSELoss(reduction='none') 
         # Dùng BCEWithLogitsLoss cho gate (đầu ra là logits)
@@ -60,7 +62,9 @@ class Tacotron2Loss(nn.Module):
         soft_mask = torch.zeros((B, T_out, T_in), device=device)
         for b in range(B):
             N = input_lengths[b].item()
-            T = output_lengths[b].item()
+            T_raw = output_lengths[b].item()
+            T_target_steps = math.ceil(T_raw / self.r)
+            T = min(T_target_steps, T_out)
             if N == 0 or T == 0: continue
             n_idx = torch.arange(N, device=device, dtype=torch.float32)
             t_idx = torch.arange(T, device=device, dtype=torch.float32)
