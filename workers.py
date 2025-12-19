@@ -125,7 +125,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
         model = DDP(model, device_ids=[device_id])
     raw_model = model.module if hparams.ddp_run else model
 
-    criterion = Tacotron2Loss().to(device_id)
+    criterion = Tacotron2Loss(hparams.n_frames_per_step).to(device_id)
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
 
     # --- Scheduler (Optional) ---
@@ -383,7 +383,7 @@ def train_worker_by_step(rank, world_size, hparams):
         model = DDP(model, device_ids=[device_id])
     raw_model = model.module if hparams.ddp_run else model
 
-    criterion = Tacotron2Loss().to(device_id)
+    criterion = Tacotron2Loss(hparams.n_frames_per_step).to(device_id)
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
 
     # --- 3. Load Checkpoint ---
