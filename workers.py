@@ -236,7 +236,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 with torch.amp.autocast(device_type='cuda', dtype=dtype_run, enabled=hparams.fp16_run): #type: ignore
                     model_outputs = model(model_inputs)
                     output_length = model_inputs[3]
-                    loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
+                    loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length, model_inputs[1])
 
                 if use_scaler:
                     scaler.scale(loss).backward()
