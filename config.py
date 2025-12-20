@@ -21,6 +21,8 @@ class Hparams:
     text_len_threshold: int = 5  # Giới hạn độ dài text tối thiểu
     duration_min_threshold: float = 0.5  # Giới hạn độ dài audio tối thiểu (giây)
     duration_max_threshold: float = 20.0  # Giới hạn độ dài audio tối đa (giây)
+    cps_min_threshold: float = 8.0  # Giới hạn cps tối thiểu
+    cps_max_threshold: float = 22.0  # Giới hạn cps tối đa
 
 
     # --- Tham số cho DDP ---

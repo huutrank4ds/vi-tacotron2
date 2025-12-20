@@ -194,14 +194,15 @@ class PrepareTextMel:
             # Điều kiện lọc:
             # - Text rỗng hoặc Audio rỗng
             # - Audio quá ngắn (< 0.5s): Thường là lỗi cắt hoặc khoảng lặng
-            # - Audio quá dài (> 12s): Gây tràn bộ nhớ GPU (OOM) với batch size lớn
+            # - Audio quá dài (> 20s): Gây tràn bộ nhớ GPU (OOM) với batch size lớn
+            # - Audio quá nhanh (CPS > 22) hoặc quá chậm (CPS < 8)
             if text_len < self.hparams.text_len_threshold or wav_len == 0:
                 continue
-            if duration_sec < self.hparams.duration_min_threshold:
-                # print(f"Skipped short audio: {duration_sec:.2f}s")
+            if duration_sec < self.hparams.duration_min_threshold or duration_sec > self.hparams.duration_max_threshold:
                 continue
-            if duration_sec > self.hparams.duration_max_threshold:
-                # print(f"Skipped long audio: {duration_sec:.2f}s") 
+            cps = text_len / duration_sec
+            if cps < self.hparams.cps_min_threshold or cps > self.hparams.cps_max_threshold:
+                # print(f"Skipped abnormal CPS: {cps:.2f} (Text len: {text_len}, Duration: {duration_sec:.2f}s)")
                 continue
 
             # --- 4. Xử lý Speaker Embedding ---
