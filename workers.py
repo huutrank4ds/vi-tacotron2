@@ -124,8 +124,12 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
     if hparams.ddp_run:
         model = DDP(model, device_ids=[device_id])
     raw_model = model.module if hparams.ddp_run else model
-
-    criterion = Tacotron2Loss(hparams.n_frames_per_step).to(device_id)
+    if hparams.guided_attention:
+        print(f"[Rank {rank}] Guided Attention is ENABLED with sigma={hparams.guided_attention_sigma}.")
+        criterion = Tacotron2Loss(hparams.n_frames_per_step, guided_sigma=hparams.guided_attention_sigma).to(device_id)
+    else:
+        print(f"[Rank {rank}] Guided Attention is DISABLED.")
+        criterion = Tacotron2Loss(hparams.n_frames_per_step).to(device_id)
     optimizer = AdamW(model.parameters(), lr=hparams.learning_rate, weight_decay=hparams.weight_decay)
 
     # --- Scheduler (Optional) ---
@@ -236,7 +240,11 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 with torch.amp.autocast(device_type='cuda', dtype=dtype_run, enabled=hparams.fp16_run): #type: ignore
                     model_outputs = model(model_inputs)
                     output_length = model_inputs[3]
-                    loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length, model_inputs[1])
+                    if hparams.guided_attention:
+                        loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length, model_inputs[1])
+                    else:
+                        # Không tham số input_lengths thì hàm loss sẽ không tính guided attention loss
+                        loss, loss_mel, loss_mel_postnet, loss_gate = criterion(model_outputs, ground_truth, output_length)
 
                 if use_scaler:
                     scaler.scale(loss).backward()

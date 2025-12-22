@@ -35,6 +35,8 @@ class Hparams:
     fp16_run: bool = True  # Sử dụng mixed precision training
     n_frames_per_step: int = 2 # Rất quan trọng cho Decoder
     num_cpu : int = 4  # Số worker cho DataLoader
+    guided_attention: bool = True
+    guided_attention_sigma: float = 0.2
     
     # Text
     symbols: List[str] = field(default_factory=lambda: SYMBOLS_LIST)
