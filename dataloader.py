@@ -34,7 +34,7 @@ def get_valloader(hparams: Hparams, prepare_text_mel_val, collate_fn):
         processed_val_ds, # type: ignore
         batch_size=hparams.batch_size,
         collate_fn=collate_fn,
-        num_workers=2,
+        num_workers=0,
         pin_memory=False,
         shuffle=False # Validation không cần shuffle
     )

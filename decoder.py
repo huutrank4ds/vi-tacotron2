@@ -25,44 +25,23 @@ class Decoder(nn.Module):
             hparams.n_mel_channels * hparams.n_frames_per_step,
             [hparams.prenet_dim, hparams.prenet_dim])
 
-        # self.attention_rnn = nn.LSTMCell(
-        #     hparams.prenet_dim + hparams.encoder_embedding_dim,
-        #     hparams.attention_rnn_dim)
-
         self.attention_rnn = nn.LSTMCell(
             hparams.prenet_dim + self.memory_dim,
             hparams.attention_rnn_dim)
-
-        # self.attention_layer = Attention(
-        #     hparams.attention_rnn_dim, hparams.encoder_embedding_dim,
-        #     hparams.attention_dim, hparams.attention_location_n_filters,
-        #     hparams.attention_location_kernel_size)
 
         self.attention_layer = Attention(
             hparams.attention_rnn_dim, self.memory_dim,
             hparams.attention_dim, hparams.attention_location_n_filters,
             hparams.attention_location_kernel_size)
 
-        # self.decoder_rnn = nn.LSTMCell(
-        #     hparams.attention_rnn_dim + hparams.encoder_embedding_dim,
-        #     hparams.decoder_rnn_dim, bias=True)
-
         self.decoder_rnn = nn.LSTMCell(
             hparams.attention_rnn_dim + self.memory_dim + hparams.speaker_embedding_dim,
             hparams.decoder_rnn_dim, bias=True)
 
-        # self.linear_projection = LinearNorm(
-        #     hparams.decoder_rnn_dim + hparams.encoder_embedding_dim,
-        #     hparams.n_mel_channels * hparams.n_frames_per_step)
-
         self.linear_projection = LinearNorm(
             hparams.decoder_rnn_dim + self.memory_dim,
             hparams.n_mel_channels * hparams.n_frames_per_step)
-
-        # self.gate_layer = LinearNorm(
-        #     hparams.decoder_rnn_dim + hparams.encoder_embedding_dim, 1,
-        #     bias=True, w_init_gain='sigmoid')
-
+        
         self.gate_layer = LinearNorm(
             hparams.decoder_rnn_dim + self.memory_dim, 1,
             bias=True, w_init_gain='sigmoid')
@@ -102,7 +81,6 @@ class Decoder(nn.Module):
 
         self.attention_weights = memory.new_zeros(B, MAX_TIME)
         self.attention_weights_cum = memory.new_zeros(B, MAX_TIME)
-        # self.attention_context = memory.new_zeros(B, self.encoder_embedding_dim)
         self.attention_context = memory.new_zeros(B, self.memory_dim)
 
         self.memory = memory
@@ -174,8 +152,7 @@ class Decoder(nn.Module):
             attention_weights_cat, self.mask)
 
         self.attention_weights_cum += self.attention_weights
-        # decoder_input = torch.cat(
-        #     (self.attention_hidden, self.attention_context), -1)
+
         decoder_input = torch.cat(
             (self.attention_hidden, self.attention_context, self.speaker_embeddings), -1)
         self.decoder_hidden, self.decoder_cell = self.decoder_rnn(
