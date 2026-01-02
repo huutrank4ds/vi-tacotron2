@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 _pad = '_'
 _punctuation = '!,.:;? '
 _special = '-'
-_letters = 'aàáảãạăằắẳẵặâầấẩẫậbcdđeèéẻẽẹêềếểễệghiìíỉĩịklmnoòóỏõọôồốổỗộơớờớởỡợpqrstuùúủũụưừứửữựvxyỳýỷỹỵ'
+_letters = 'aàáảãạăằắẳẵặâầấẩẫậbcdđeèéẻẽẹêềếểễệghiìíỉĩịklmnoòóỏõọôồốổỗộơớờớởỡợpqrstuùúủũụưừứửữựvxyỳýỷỹỵfjz'
 SYMBOLS_LIST = [_pad] + list(_special) + list(_punctuation) + list(_letters)
 DATASET_CHUNKS_DEFAULT = [f'/kaggle/input/phoaudiobook-{i}' for i in range(1, 13)]
 

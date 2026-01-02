@@ -91,7 +91,7 @@ class Decoder(nn.Module):
     def parse_decoder_inputs(self, decoder_inputs):
         """ Prepares decoder inputs, i.e. mel outputs
         PARAMS
-        ------
+        ------ 
         decoder_inputs: inputs used for teacher-forced training, i.e. mel-specs
 
         RETURNS

@@ -2,7 +2,6 @@ import torch
 import torchaudio
 from config import Hparams
 from torch.nn.utils.rnn import pad_sequence
-import unicodedata
 import re
 import librosa #type: ignore
 

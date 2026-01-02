@@ -24,42 +24,6 @@ class Tacotron2(nn.Module):
         self.decoder = Decoder(hparams)
         self.postnet = Postnet(hparams)
 
-        # self.speaker_projection = nn.Sequential(
-        #     nn.Linear(hparams.speaker_embedding_dim, 256),
-        #     nn.ReLU(),
-        #     nn.Dropout(hparams.speaker_projection_dropout), # Dropout thường tắt khi inference, nhưng training cần
-        #     nn.Linear(256, hparams.encoder_embedding_dim) 
-        # )
-        # self.init_speaker_projection_weights()
-
-    # def init_speaker_projection_weights(self):
-    #     for module in self.speaker_projection.modules():
-    #         if isinstance(module, nn.Linear):
-    #             nn.init.xavier_uniform_(module.weight)
-    #             if module.bias is not None:
-    #                 nn.init.constant_(module.bias, 0.0)
-
-    def parse_batch(self, batch, rank):
-        # Hàm này hiện tại có thể không dùng nếu bạn dùng parse_batch_gpu trong worker
-        # Nhưng giữ lại cũng không sao
-        text_padded = batch['text_inputs']
-        input_lengths = batch['text_lengths']
-        mel_padded = batch['mel_targets']
-        gate_padded = batch['stop_tokens']
-        speaker_embeddings = batch['speaker_embeddings']
-        output_lengths = batch['mel_lengths']
-
-        text_padded = to_gpu(text_padded, rank).long()
-        input_lengths = to_gpu(input_lengths, rank).long()
-        mel_padded = to_gpu(mel_padded, rank).float()
-        gate_padded = to_gpu(gate_padded, rank).float()
-        output_lengths = to_gpu(output_lengths, rank).long()
-        speaker_embeddings = to_gpu(speaker_embeddings, rank).float()
-
-        return (
-            (text_padded, input_lengths, mel_padded, output_lengths, speaker_embeddings),
-            (mel_padded, gate_padded))
-
     def parse_output(self, outputs, output_lengths=None):
         if self.mask_padding and output_lengths is not None:
             # [FIX QUAN TRỌNG] Lấy max_len từ chính tensor output (đã pad r)

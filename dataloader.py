@@ -2,10 +2,8 @@ from torch.utils.data import DataLoader
 from datasets import load_dataset
 from processing import PrepareTextMel, CollateTextMel
 from config import Hparams
-from huggingface_hub import list_repo_files, hf_hub_url
 import torch
 from pathlib import Path
-import torch.distributed as dist
 
 def get_valset(hparams: Hparams):
     """Tải validation set từ file parquet đã lưu sẵn."""
@@ -70,21 +68,6 @@ def load_dataset_chunks(rank, hparams: Hparams, index: int):
     )
     print(f"[Rank {rank}] Dataset chunk {index} ready.") # type: ignore
     return dataset
-
-def remove_chunk_cache(hparams: Hparams, index: int):
-    """Xóa cache của chunk dataset đã load."""
-    chunk_cache_dir = Path(hparams.cache_chunk_dir) / f"chunk_{index}"
-    if chunk_cache_dir.exists() and chunk_cache_dir.is_dir():
-        for item in chunk_cache_dir.iterdir():
-            if item.is_file():
-                item.unlink()
-            elif item.is_dir():
-                import shutil
-                shutil.rmtree(item)
-        chunk_cache_dir.rmdir()
-        print(f"Removed cache for chunk {index}.")
-    else:
-        print(f"No cache found for chunk {index} to remove.")
 
 def get_trainloader_chunk(
     rank, 
