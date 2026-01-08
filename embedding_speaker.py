@@ -3,7 +3,7 @@ import torch
 import torchaudio
 import torchaudio.transforms as T
 from speechbrain.inference.speaker import EncoderClassifier
-from speechbrain.inference.vocoder import HIFIGAN
+from speechbrain.inference.vocoders import HIFIGAN
 from speechbrain.dataio.batch import PaddedBatch
 import IPython.display as ipd
 import numpy as np
