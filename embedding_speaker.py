@@ -40,6 +40,17 @@ class SpeakerEncoder:
                 embeddings[filename] = embedding
         return embeddings
     
+    def encode_signal(self, signal, fs, target_device='cuda'):
+        if fs != 16000:
+            if fs not in self.resamplers:
+                self.resamplers[fs] = T.Resample(orig_freq=fs, new_freq=16000)
+            signal = self.resamplers[fs](signal)
+        if signal.shape[0] > 1:
+            signal = torch.mean(signal, dim=0, keepdim=True)
+        with torch.no_grad():
+            embedding = self.classifier.encode_batch(signal.to(self.device))
+        return embedding.squeeze(0).to(target_device)
+    
 class Vocoder:
     def __init__(self, device='cuda'):
         self.device = device
