@@ -75,7 +75,7 @@ class Tacotron2(nn.Module):
             [mel_outputs, mel_outputs_postnet, gate_outputs, alignments],
             output_lengths)
 
-    def inference(self, text_inputs, speaker_embeddings):
+    def inference(self, text_inputs, speaker_embeddings, use_window_mask=True):
         # text_inputs: [1, T]
         # speaker_embeddings: [1, Dim]
 
@@ -94,7 +94,7 @@ class Tacotron2(nn.Module):
         
 
         mel_outputs, gate_outputs, alignments = self.decoder.inference(
-            encoder_outputs, speaker_embeddings=speaker_embeddings)
+            encoder_outputs, speaker_embeddings=speaker_embeddings, use_window_mask=use_window_mask)
 
         mel_outputs_postnet = self.postnet(mel_outputs)
         mel_outputs_postnet = mel_outputs + mel_outputs_postnet
