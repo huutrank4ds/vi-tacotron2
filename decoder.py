@@ -214,7 +214,7 @@ class Decoder(nn.Module):
 
         while True:
             decoder_input = self.prenet(decoder_input)
-            window_mask = get_window_mask(
+            window_mask = ~get_window_mask(
                 prev_alignment=self.attention_weights,
                 window_backward=2,
                 window_forward=5
