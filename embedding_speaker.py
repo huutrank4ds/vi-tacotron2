@@ -62,7 +62,7 @@ class SpeakerEncoder:
             processed_tensors.append({"signal": waveform})
         return processed_tensors
     
-    def encoder_all_data(self, ds, batch_size=32, save_file=None):
+    def encode_all_data(self, ds, batch_size=32, save_file=None):
         global_embeddings = []
         global_speaker_ids = []
         speaker_to_idx = {}
@@ -75,8 +75,8 @@ class SpeakerEncoder:
             list_tensors = self.process_batch_audio(batch_slice, device=self.device)
 
             batch = PaddedBatch(list_tensors)
-            signals = batch.signals.data
-            lens = batch.signals.lengths
+            signals = batch.signal.data
+            lens = batch.signal.lengths
             with torch.no_grad():
                 embeddings = self.classifier.encode_batch(signals, wave_lens=lens)
             embeddings = embeddings.squeeze(1).cpu().unbind(0)
