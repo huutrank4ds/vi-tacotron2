@@ -78,7 +78,7 @@ class SpeakerEncoder:
             signals = batch.signal.data
             lens = batch.signal.lengths
             with torch.no_grad():
-                embeddings = self.classifier.encode_batch(signals, wave_lens=lens)
+                embeddings = self.classifier.encode_batch(signals, wav_lens=lens)
             embeddings = embeddings.squeeze(1).cpu().unbind(0)
             for idx, spk_name in enumerate(batch_speakers):
                 # Mapping Speaker Name -> ID
