@@ -112,7 +112,11 @@ def get_window_mask(prev_alignment, window_backward=2, window_forward=5):
     
     for b in range(batch_size):
         center = prev_max_idx[b].item()
-        start = max(0, center - window_backward) if window_backward is not None else 0
-        end = min(text_len, center + window_forward + 1) if window_forward is not None else text_len
+        if center < window_backward or center + window_forward >= text_len:
+            start = 0
+            end = text_len
+        else:
+            start = center - window_backward
+            end = center + window_forward + 1
         mask[b, start:end] = True
     return mask

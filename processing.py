@@ -51,17 +51,13 @@ class PrepareTextMel:
         )
 
     # --- Các Method xử lý Text ---
-    
     def clean_text(self, text):
         if not text: return ""
         text = text.lower()
-        
         # Token tạm để bảo vệ những chữ "chấm" cần giữ lại
         TEMP_TOKEN = " _SPECIAL_DOT_ "
-        
         # --- BƯỚC 0: BẢO VỆ SỐ THẬP PHÂN (5 chấm 5 -> giữ nguyên) ---
         text = re.sub(r'(\d+)\s+chấm\s+(\d+)', rf'\1{TEMP_TOKEN}\2', text)
-
         # --- BƯỚC 1: BẢO VỆ TỪ GHÉP PHÍA TRƯỚC (Whitelist Before) ---
         # Những từ này đứng trước "chấm" thì "chấm" là động từ/danh từ -> GIỮ NGUYÊN
         whitelist_before = [
@@ -71,33 +67,26 @@ class PrepareTextMel:
         ]
         for word in whitelist_before:
             text = re.sub(rf'\b{word}\s+chấm\b', f'{word}{TEMP_TOKEN}', text)
-
         # --- BƯỚC 2: BẢO VỆ TỪ GHÉP PHÍA SAU (Whitelist After) ---
         # [QUAN TRỌNG] Thêm "bài", "thi", "hết" vào đây để GIỮ NGUYÊN
         common_words = "dứt|điểm|thi|công|bài|phá|mút|bi|tử|lượng|phạt|đầu|nương|hết|hỏi|than|lửng|phẩy"
         domains = "com|net|vn|org|edu|gov|io|info|biz"
-        
         # Kết hợp tất cả từ cần bảo vệ
         whitelist_after = f"{common_words}|{domains}"
-        
         # Logic Regex:
         # Tìm chữ "chấm" (và khoảng trắng trước nó \s*)
         # NHƯNG chỉ thay thế nếu phía sau nó KHÔNG PHẢI (?!) là các từ trong whitelist
         pattern = r'\s*\bchấm\b(?!\s*(' + whitelist_after + '))'
-        
         # Thay thế các trường hợp còn lại thành dấu "."
         text = re.sub(pattern, '.', text)
-        
         # --- BƯỚC 3: KHÔI PHỤC ---
         # Trả lại chữ "chấm" cho các trường hợp đã bảo vệ
         text = text.replace(TEMP_TOKEN, " chấm ")
-
         # --- BƯỚC 4: DỌN DẸP DẤU CÂU ---
         text = re.sub(r'\s+\.', '.', text)   # Xóa space thừa trước dấu chấm
         text = re.sub(r'\.\s*', '. ', text)  # Thêm space sau dấu chấm
         text = re.sub(r'\.\s*\.', '.', text) # Fix lỗi 2 dấu chấm
         text = re.sub(r'\s+', ' ', text)     # Fix nhiều space
-        
         return text.strip()
 
     def text_to_sequence(self, text):
@@ -115,7 +104,6 @@ class PrepareTextMel:
         return "".join([self._id_to_symbol.get(i, '') for i in sequence])
 
     # --- Các Method xử lý Audio ---
-
     def resample_audio(self, audio_array, original_sr):
         """
         Resample audio từ original_sr về target_sr.
@@ -130,28 +118,24 @@ class PrepareTextMel:
             audio_tensor = self.resampler_cache[original_sr](audio_tensor)
         return audio_tensor
 
+    # Phương thức xử lý mẫu đơn lẻ
     def audio_to_mel(self, audio_array, original_sr):
         """
         Chuyển đổi waveform thành log-mel spectrogram.
         """
         # 1. Resample nếu cần
         audio_tensor = self.resample_audio(audio_array, original_sr)
-        
         # 3. Tính Mel Spectrogram
         mel = self.mel_transform(audio_tensor.unsqueeze(0)) 
-        
         # 4. Chuyển sang thang đo log
         log_mel = torch.log(torch.clamp(mel, min=1e-5))
-        
         # 5. Bỏ batch dim và trả về
         return log_mel.squeeze(0) # Shape: [n_mels, n_frames]
-
 
     def prosessing_text(self, text, device):
         return torch.IntTensor(self.text_to_sequence(text)).unsqueeze(0).to(device)
 
     # --- Phương thức __call__ để dùng với .map() ---
-
     def __call__(self, batch):
         """
         Xử lý một batch (chunk) dữ liệu khi được gọi bởi datasets.map.
