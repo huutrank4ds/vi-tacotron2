@@ -209,18 +209,21 @@ class Decoder(nn.Module):
 
         return mel_outputs, gate_outputs, alignments
 
-    def inference(self, memory, speaker_embeddings):
+    def inference(self, memory, speaker_embeddings, use_window_mask=True):
         decoder_input = self.get_go_frame(memory)
         self.initialize_decoder_states(memory, mask=None, speaker_embeddings=speaker_embeddings)
         mel_outputs, gate_outputs, alignments = [], [], []
 
         while True:
             decoder_input = self.prenet(decoder_input)
-            window_mask = ~get_window_mask(
-                prev_alignment=alignments[-1] if len(alignments) > 0 else self.attention_weights,
-                window_backward=self.window_backward,
-                window_forward=self.window_forward
-            )
+            if use_window_mask:
+                window_mask = ~get_window_mask(
+                    prev_alignment=alignments[-1] if len(alignments) > 0 else self.attention_weights,
+                    window_backward=self.window_backward,
+                    window_forward=self.window_forward
+                )
+            else:
+                window_mask = None
             with torch.no_grad():
                 mel_output, gate_output, alignment = self.decode(decoder_input, mask=window_mask)
 
