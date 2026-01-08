@@ -105,4 +105,8 @@ class Hparams:
     dataset_chunks: List[str] = field(default_factory=lambda: DATASET_CHUNKS_DEFAULT)
     cache_chunk_dir: str = '/kaggle/working/chunk_cache'
     metadata: Dict[int, int] = field(default_factory=dict)  # Lưu trữ metadata cho từng chunk
+
+    # Tham số window masked cho Attention khi inference
+    window_backward: int = 2
+    window_forward: int = 5
     

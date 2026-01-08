@@ -20,6 +20,8 @@ class Decoder(nn.Module):
         self.p_attention_dropout = hparams.p_attention_dropout
         self.p_decoder_dropout = hparams.p_decoder_dropout
         self.memory_dim = hparams.encoder_embedding_dim + hparams.speaker_embedding_dim  # Vì đã concat Speaker
+        self.window_backward = hparams.window_backward
+        self.window_forward = hparams.window_forward
 
         self.prenet = Prenet(
             hparams.n_mel_channels * hparams.n_frames_per_step,
@@ -216,8 +218,8 @@ class Decoder(nn.Module):
             decoder_input = self.prenet(decoder_input)
             window_mask = ~get_window_mask(
                 prev_alignment=alignments[-1] if len(alignments) > 0 else self.attention_weights,
-                window_backward=2,
-                window_forward=5
+                window_backward=self.window_backward,
+                window_forward=self.window_forward
             )
             with torch.no_grad():
                 mel_output, gate_output, alignment = self.decode(decoder_input, mask=window_mask)
