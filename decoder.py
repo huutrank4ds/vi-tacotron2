@@ -4,7 +4,7 @@ from torch.nn import functional as F
 from prenet import Prenet
 from attentions import Attention
 from layers import LinearNorm
-from utils import get_mask_from_lengths
+from utils import get_mask_from_lengths, get_window_mask
 
 class Decoder(nn.Module):
     def __init__(self, hparams):
@@ -126,7 +126,7 @@ class Decoder(nn.Module):
 
         return mel_outputs, gate_outputs, alignments
 
-    def decode(self, decoder_input):
+    def decode(self, decoder_input, mask=None):
         """ Decoder step using stored states, attention and memory
         PARAMS
         ------
@@ -138,6 +138,8 @@ class Decoder(nn.Module):
         gate_output: gate output energies
         attention_weights:
         """
+        attention_mask = mask if mask is not None else self.mask
+
         cell_input = torch.cat((decoder_input, self.attention_context), -1)
         self.attention_hidden, self.attention_cell = self.attention_rnn(
             cell_input, (self.attention_hidden, self.attention_cell))
@@ -149,7 +151,7 @@ class Decoder(nn.Module):
              self.attention_weights_cum.unsqueeze(1)), dim=1)
         self.attention_context, self.attention_weights = self.attention_layer(
             self.attention_hidden, self.memory, self.processed_memory,
-            attention_weights_cat, self.mask)
+            attention_weights_cat, attention_mask)
 
         self.attention_weights_cum += self.attention_weights
 
@@ -212,9 +214,13 @@ class Decoder(nn.Module):
 
         while True:
             decoder_input = self.prenet(decoder_input)
-            
+            window_mask = get_window_mask(
+                prev_alignment=self.attention_weights,
+                window_backward=2,
+                window_forward=5
+            )
             with torch.no_grad():
-                mel_output, gate_output, alignment = self.decode(decoder_input)
+                mel_output, gate_output, alignment = self.decode(decoder_input, mask=window_mask)
 
             mel_outputs += [mel_output.squeeze(1)]
             gate_outputs += [gate_output.squeeze(1)] # [FIX] Đã squeeze chuẩn

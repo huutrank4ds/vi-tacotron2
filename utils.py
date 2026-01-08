@@ -92,3 +92,27 @@ def parse_batch_gpu(batch, device, mel_transform, hparams):
         (text_padded, input_lengths, mels, mel_lengths, speaker_embeddings),
         (mels, gate_padded)
     )
+
+def get_window_mask(prev_alignment, window_backward=2, window_forward=5):
+    """
+    Hàm tạo mask cửa sổ cho Attention.
+    
+    Args:
+        energies (Tensor): Điểm năng lượng attention (trước Softmax). Shape: [Batch, Text_Len]
+        prev_alignment (Tensor): Trọng số attention của bước trước. Shape: [Batch, Text_Len]
+        window_backward (int): Cho phép nhìn lại bao nhiêu bước (thường nhỏ để tránh lặp).
+        window_forward (int): Cho phép nhìn tới bao nhiêu bước.
+        
+    Returns:
+        energies_masked: Energies đã bị che các vùng không hợp lệ.
+    """
+    batch_size, text_len = prev_alignment.size()
+    prev_max_idx = torch.argmax(prev_alignment, dim=1)
+    mask = torch.zeros_like(prev_alignment, dtype=torch.bool)
+    
+    for b in range(batch_size):
+        center = prev_max_idx[b].item()
+        start = max(0, center - window_backward)
+        end = min(text_len, center + window_forward + 1)
+        mask[b, start:end] = True
+    return mask
