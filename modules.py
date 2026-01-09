@@ -158,11 +158,39 @@ class Vocoder:
         waveform = self.synthesize(mel_spectrogram)
         torchaudio.save(output_path, waveform, 16000)
 
-    def _play_audio(self, waveform, ):
-        if isinstance(waveform, torch.Tensor):
-            waveform = waveform.detach().cpu().squeeze(0).numpy()
-        else:
-            waveform = waveform.squeeze(0)
-        if np.abs(waveform).max() > 1.0:
-            waveform = waveform / np.abs(waveform).max()
+    def _play_audio(self, waveform, save_path=None):
+        """
+        Phát âm thanh và tùy chọn lưu ra file.
+        Hỗ trợ input là: Tensor, Numpy Array, hoặc List.
+        """
+        # 1. Xử lý Input: Chuyển tất cả về Numpy Array 1 chiều (Mono)
+        if isinstance(waveform, list):
+            waveform = np.array(waveform)
+        elif isinstance(waveform, torch.Tensor):
+            waveform = waveform.detach().cpu().numpy()
+        
+        # Đảm bảo là numpy array (phòng trường hợp input lạ)
+        waveform = np.array(waveform)
+
+        # 2. Xử lý Shape: Đưa về dạng 1 chiều [Time] để phát
+        # Nếu shape là [1, Time] hoặc [1, 1, Time] -> nén lại
+        if waveform.ndim > 1:
+            waveform = np.squeeze(waveform)
+        
+        # 3. Chuẩn hóa (Normalize) để tránh vỡ tiếng (Clipping)
+        max_val = np.abs(waveform).max()
+        if max_val > 1.0:
+            waveform = waveform / max_val
+            
+        # 4. Lưu file nếu có yêu cầu
+        if save_path is not None:
+            # Tạo thư mục cha nếu chưa tồn tại
+            os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
+            
+            # Torchaudio yêu cầu input là Tensor [Channels, Time] -> [1, Time]
+            wav_tensor = torch.from_numpy(waveform).float().unsqueeze(0)
+            torchaudio.save(save_path, wav_tensor, 16000)
+            print(f"💾 Đã lưu file audio tại: {save_path}")
+
+        # 5. Trả về widget phát nhạc
         return ipd.Audio(waveform, rate=16000, normalize=False)
