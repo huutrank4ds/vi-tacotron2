@@ -108,4 +108,8 @@ class Hparams:
     # Tham số window masked cho Attention khi inference
     window_backward: int = 2
     window_forward: int = 5
+
+    # Tham số dừng cứng khi inference
+    max_stuck_at_end: int = 15  # Số bước tối đa được phép bị kẹt ở cuối đoạn trước khi dừng
+    end_margin: int = 5  # Số khung mel cuối cùng để kiểm tra tín hiệu dừng
     
