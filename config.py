@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 _pad = '_'
 _punctuation = '!,.:;? '
 _special = '-'
-_letters = 'aàáảãạăằắẳẵặâầấẩẫậbcdđeèéẻẽẹêềếểễệghiìíỉĩịklmnoòóỏõọôồốổỗộơớờớởỡợpqrstuùúủũụưừứửữựvxyỳýỷỹỵ'
+_letters = 'aàáảãạăằắẳẵặâầấẩẫậbcdđeèéẻẽẹêềếểễệghiìíỉĩịklmnoòóỏõọôồốổỗộơớờớởỡợpqrstuùúủũụưừứửữựvxyỳýỷỹỵfjz'
 SYMBOLS_LIST = [_pad] + list(_special) + list(_punctuation) + list(_letters)
 DATASET_CHUNKS_DEFAULT = [f'/kaggle/input/phoaudiobook-{i}' for i in range(1, 13)]
 
@@ -21,6 +21,8 @@ class Hparams:
     text_len_threshold: int = 5  # Giới hạn độ dài text tối thiểu
     duration_min_threshold: float = 0.5  # Giới hạn độ dài audio tối thiểu (giây)
     duration_max_threshold: float = 20.0  # Giới hạn độ dài audio tối đa (giây)
+    cps_min_threshold: float = 8.0  # Giới hạn cps tối thiểu
+    cps_max_threshold: float = 22.0  # Giới hạn cps tối đa
 
 
     # --- Tham số cho DDP ---
@@ -30,9 +32,11 @@ class Hparams:
 
     # --- Các tham số khác ---
     mask_padding: bool = True
-    fp16_run: bool = False
+    fp16_run: bool = True  # Sử dụng mixed precision training
     n_frames_per_step: int = 2 # Rất quan trọng cho Decoder
     num_cpu : int = 4  # Số worker cho DataLoader
+    guided_attention: bool = True
+    guided_attention_sigma: float = 0.2
     
     # Text
     symbols: List[str] = field(default_factory=lambda: SYMBOLS_LIST)
@@ -59,7 +63,6 @@ class Hparams:
     encoder_n_convolutions: int = 3
     encoder_kernel_size: int = 5
     encoder_embedding_dim: int = 512
-    speaker_projection_dropout: float = 0.1
 
     # --- Prenet ---
     prenet_dim: int = 256
@@ -87,7 +90,7 @@ class Hparams:
     weight_decay: float = 1e-6
     batch_size: int = 32
     checkpoint_path: str = "checkpoints/"
-    name_file_checkpoint: str = "checkpoint_vi_tacotron2"
+    name_file_checkpoint: str = "checkpoint_vi_tacotron2.pt"
     val_interval: int = 100
     log_interval: int = 100
     seed: int = 42
@@ -101,4 +104,12 @@ class Hparams:
     dataset_chunks: List[str] = field(default_factory=lambda: DATASET_CHUNKS_DEFAULT)
     cache_chunk_dir: str = '/kaggle/working/chunk_cache'
     metadata: Dict[int, int] = field(default_factory=dict)  # Lưu trữ metadata cho từng chunk
+
+    # Tham số window masked cho Attention khi inference
+    window_backward: int = 2
+    window_forward: int = 5
+
+    # Tham số dừng cứng khi inference
+    max_stuck_at_end: int = 15  # Số bước tối đa được phép bị kẹt ở cuối đoạn trước khi dừng
+    end_margin: int = 5  # Số khung mel cuối cùng để kiểm tra tín hiệu dừng
     

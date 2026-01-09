@@ -1,58 +1,44 @@
 import torch
 import torch.nn as nn
 from utils import get_mask_from_lengths
+import math
 
 class Tacotron2Loss(nn.Module):
-    def __init__(self, pos_weight=10.0):
+    def __init__(self, n_frame_per_step, pos_weight=10.0, guided_sigma=0.2):
         super(Tacotron2Loss, self).__init__()
+        self.r = n_frame_per_step
         # Dùng MSELoss (reduction='none' để tính từng phần tử)
         self.mel_loss_fn = nn.MSELoss(reduction='none') 
         # Dùng BCEWithLogitsLoss cho gate (đầu ra là logits)
         weight = torch.tensor([pos_weight])
         self.gate_loss_fn = nn.BCEWithLogitsLoss(reduction='none', pos_weight=weight)
         self.get_mask_from_lengths = get_mask_from_lengths
+        self.sigma = guided_sigma
 
-    # def forward(self, model_outputs, ground_truth, output_lengths):
-    #     """
-    #     model_outputs: List từ forward [mel_out, mel_post_out, gate_out, align]
-    #     ground_truth: Tuple từ parse_batch (mel_padded, gate_padded)
-    #     """
-        
-    #     # --- Giải nén đầu vào ---
-    #     mel_out = model_outputs[0]              # [B, n_mels, T]
-    #     mel_out_postnet = model_outputs[1]      # [B, n_mels, T]
-    #     gate_out = model_outputs[2]             # [B, T]
-        
-    #     mel_target = ground_truth[0]            # [B, n_mels, T]
-    #     gate_target = ground_truth[1]           # [B, T]
-        
-    #     # --- Tạo mask ---
-    #     # mask shape: [B, T]
-    #     mask = self.get_mask_from_lengths(output_lengths)
-        
-    #     # Mở rộng mask cho mel: [B, T] -> [B, n_mels, T]
-    #     mel_mask = mask.unsqueeze(1).expand_as(mel_out)
-        
-    #     # --- Tính toán 3 thành phần loss ---
-        
-    #     # 1. Mel loss (trước postnet)
-    #     mel_loss_raw = self.mel_loss_fn(mel_out, mel_target)
-    #     loss_mel = torch.sum(mel_loss_raw * mel_mask) / torch.sum(mel_mask)
-        
-    #     # 2. Mel loss (sau postnet)
-    #     mel_postnet_loss_raw = self.mel_loss_fn(mel_out_postnet, mel_target)
-    #     loss_mel_postnet = torch.sum(mel_postnet_loss_raw * mel_mask) / torch.sum(mel_mask)
+    def _compute_guided_attention_loss(self, alignments, input_lengths, output_lengths):
+        B, T_out, T_in = alignments.shape
+        device = alignments.device
+        # Tạo lưới tọa độ cho Encoder và Decoder
+        soft_mask = torch.zeros((B, T_out, T_in), device=device)
+        for b in range(B):
+            N = input_lengths[b].item()
+            T_raw = output_lengths[b].item()
+            T_target_steps = math.ceil(T_raw / self.r)
+            T = min(T_target_steps, T_out)
+            if N == 0 or T == 0: continue
+            n_idx = torch.arange(N, device=device, dtype=torch.float32)
+            t_idx = torch.arange(T, device=device, dtype=torch.float32)
+            # Tạo lưới 2D [T, N]
+            grid_n = n_idx.unsqueeze(0) / N  # [1, N]
+            grid_t = t_idx.unsqueeze(1) / T  # [T, 1]
+            # Tính ma trận hướng dẫn
+            W = 1.0 - torch.exp(-((grid_t - grid_n) ** 2) / (2 * (self.sigma ** 2)))  # [T, N]
+            soft_mask[b, :T, :N] = W
+        guided_loss = torch.mean(alignments * soft_mask)
+        return guided_loss
 
-    #     # 3. Gate loss
-    #     gate_loss_raw = self.gate_loss_fn(gate_out, gate_target)
-    #     loss_gate = torch.sum(gate_loss_raw * mask) / torch.sum(mask)
-        
-    #     # Tổng loss
-    #     total_loss = loss_mel + loss_mel_postnet + loss_gate
-        
-    #     return total_loss, loss_mel, loss_mel_postnet, loss_gate
 
-    def forward(self, model_outputs, ground_truth, output_lengths):
+    def forward(self, model_outputs, ground_truth, output_lengths, input_lengths=None):
         mel_out, mel_out_postnet, gate_out, _ = model_outputs
         mel_target, gate_target = ground_truth
 
@@ -83,7 +69,13 @@ class Tacotron2Loss(nn.Module):
         gate_loss = self.gate_loss_fn(gate_out, gate_target)
         loss_gate = (gate_loss * mask).sum() / mask.sum()
 
+        # --- 4. Tính Guided Attention Loss (nếu có input_lengths) ---
+        guided_attn_loss = 0.0
+        if input_lengths is not None:
+            alignments = model_outputs[3]  # [B, T_out, T_in]
+            guided_attn_loss = self._compute_guided_attention_loss(alignments, input_lengths, output_lengths)
+
         # --- 4. Tổng hợp ---
-        total_loss = loss_mel + loss_mel_postnet + loss_gate
+        total_loss = loss_mel + loss_mel_postnet + loss_gate + guided_attn_loss
 
         return total_loss, loss_mel, loss_mel_postnet, loss_gate
