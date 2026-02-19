@@ -3,7 +3,6 @@ from torch import nn
 from encoder import Encoder
 from decoder import Decoder
 from postnet import Postnet
-from utils import to_gpu, get_mask_from_lengths
 import torch.nn.functional as F
 
 class Tacotron2(nn.Module):
@@ -26,7 +25,7 @@ class Tacotron2(nn.Module):
 
     def parse_output(self, outputs, output_lengths=None):
         if self.mask_padding and output_lengths is not None:
-            # [FIX QUAN TRỌNG] Lấy max_len từ chính tensor output (đã pad r)
+            # Lấy max_len từ chính tensor output (đã pad r)
             max_len = outputs[0].size(2)
             device = outputs[0].device
             
@@ -41,7 +40,7 @@ class Tacotron2(nn.Module):
             # Expand mask cho Mel [B, n_mels, T]
             mask_mel = mask.unsqueeze(1).expand_as(outputs[0])
             
-            # [FIX] Bỏ .data để chuẩn PyTorch mới
+            # Bỏ .data để chuẩn PyTorch mới
             outputs[0] = outputs[0].masked_fill(mask_mel, 0.0)
             outputs[1] = outputs[1].masked_fill(mask_mel, 0.0)
             outputs[2] = outputs[2].masked_fill(mask, 1e3)

@@ -5,8 +5,8 @@ import os
 from utils import load_checkpoint_chunk
 import torch
 
-class WrappedModel:
-    def __init__(self, tacotron2_hparams, device='cuda'):
+class Synthesizer:
+    def __init__(self, tacotron2_hparams, tacotron2_checkpoint_path=None, device='cuda'):
         self.device = device
         self.tacotron2 = Tacotron2(tacotron2_hparams).to(device)
         self.tacotron2.eval()
@@ -14,7 +14,10 @@ class WrappedModel:
         self.speaker_encoder = SpeakerEncoder(device=device)
         self.vocoder = Vocoder(device=device)
         self.prepare = PrepareTextMel(hparams=tacotron2_hparams)
-        checkpoint_path = os.path.join(tacotron2_hparams.checkpoint_path, tacotron2_hparams.name_file_checkpoint)
+        if tacotron2_checkpoint_path is not None:
+            checkpoint_path = tacotron2_checkpoint_path
+        else:
+            checkpoint_path = os.path.join(tacotron2_hparams.checkpoint_path, tacotron2_hparams.name_file_checkpoint)
         checkpoint_param = load_checkpoint_chunk(checkpoint_path, self.tacotron2, device)
 
     def gen_wav(self, text, speaker_embedding=None, audio=None):

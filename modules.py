@@ -20,16 +20,16 @@ class SpeakerEncoder:
 
         # --- 2. Cơ chế Singleton: Chỉ tải model nếu chưa có ---
         if SpeakerEncoder._shared_model is None:
-            print(f"⏳ Đang tải EncoderClassifier về {self.device} lần đầu...")
+            print(f"Đang tải EncoderClassifier về {self.device} lần đầu...")
             SpeakerEncoder._shared_model = EncoderClassifier.from_hparams(
                 source="speechbrain/spkrec-ecapa-voxceleb",
                 savedir="pretrained_models/spkrec-ecapa-voxceleb",
                 run_opts={"device": self.device}
             )
             SpeakerEncoder._shared_model.eval()
-            print("✅ Đã tải xong Encoder!")
+            print("Đã tải xong Encoder!")
         else:
-            print("⚡ Sử dụng lại Encoder đã tải sẵn.")
+            print("Sử dụng lại Encoder đã tải sẵn.")
         
         # Gán biến instance trỏ vào biến class đã tải
         self.classifier = SpeakerEncoder._shared_model
@@ -133,16 +133,16 @@ class Vocoder:
         
         # --- 2. Cơ chế Singleton ---
         if Vocoder._shared_vocoder is None:
-            print(f"⏳ Đang tải HiFiGAN về {self.device} lần đầu...")
+            print(f"Đang tải HiFiGAN về {self.device} lần đầu...")
             Vocoder._shared_vocoder = HIFIGAN.from_hparams(
                 source="speechbrain/tts-hifigan-libritts-16kHz",
                 savedir="pretrained_models/tts-hifigan-libritts-16kHz",
                 run_opts={"device": self.device}
             )
             Vocoder._shared_vocoder.eval()
-            print("✅ Đã tải xong Vocoder!")
+            print("Đã tải xong Vocoder!")
         else:
-            print("⚡ Sử dụng lại Vocoder đã tải sẵn.")
+            print("Sử dụng lại Vocoder đã tải sẵn.")
             
         self.vocoder = Vocoder._shared_vocoder
 
@@ -190,7 +190,7 @@ class Vocoder:
             # Torchaudio yêu cầu input là Tensor [Channels, Time] -> [1, Time]
             wav_tensor = torch.from_numpy(waveform).float().unsqueeze(0)
             torchaudio.save(save_path, wav_tensor, 16000)
-            print(f"💾 Đã lưu file audio tại: {save_path}")
+            print(f"Đã lưu file audio tại: {save_path}")
 
         # 5. Trả về widget phát nhạc
         return ipd.Audio(waveform, rate=16000, normalize=False)
