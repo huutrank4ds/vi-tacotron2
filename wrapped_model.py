@@ -1,5 +1,5 @@
 from model import Tacotron2
-from module import SpeakerEncoder, Vocoder
+from modules import SpeakerEncoder, Vocoder
 from processing import PrepareTextMel
 import os
 from utils import load_checkpoint_chunk

@@ -211,11 +211,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     pbar.set_postfix({'Loss': f"{loss.item():.4f}",  #type: ignore
                                       'Mel': f"{loss_mel.item():.4f}",
                                       'Postnet': f"{loss_mel_postnet.item():.4f}",
-<<<<<<< HEAD
-                                      'Gate': f"{loss_gate.item():.4f}"}) # type: ignore
-=======
                                       'Gate': f"{loss_gate.item():.4f}"})
->>>>>>> develop
 
             # --- VALIDATION ---
             if hparams.ddp_run:
@@ -229,15 +225,10 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 
                 # Biến tích lũy Val Loss
                 total_val_loss = 0.0
-<<<<<<< HEAD
-                pbar.close() # Đóng pbar của train_loader trước khi mở pbar mới #type: ignore
-
-=======
                 total_val_mel = 0.0
                 total_val_post = 0.0
                 total_val_gate = 0.0
                 
->>>>>>> develop
                 with torch.no_grad():
                     val_progress = tqdm(val_set, desc="Validation", unit="batch", leave=False, position=1)
                     for val_batch in val_progress:
@@ -282,17 +273,10 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 if avg_val_loss < best_val_loss:
                     best_val_loss = avg_val_loss
                     patience_counter = 0
-<<<<<<< HEAD
-                    # Lưu best model
-                    save_name = f"{hparams.name_file_checkpoint}_best.pt"
-                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
-                    print(f"Saved NEW BEST model at epoch {epoch}, chunk {list_idx}: {save_name}")
-=======
                     save_name = f"checkpoint_vi_tacotron2_best.pt"
                     # Kiểm tra hết chunk list chưa
                     save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, end_epoch, save_name, hparams)
                     print(f"Saved NEW BEST model: {save_name}")
->>>>>>> develop
                 else:
                     patience_counter += 1
                     save_name = f"checkpoint_vi_tacotron2_last.pt"
@@ -300,17 +284,8 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                     print(f"Saved Last Checkpoint: {save_name}")
 
                     if patience_counter >= hparams.early_stopping_patience:
-<<<<<<< HEAD
-                        print(f"==> EARLY STOPPING TRIGGERED at epoch {epoch}, chunk {list_idx}!")
-                        stop_signal = torch.tensor(1).to(device_id) # Bật tín hiệu dừng
-                    print(f"Best Val Loss remains: {best_val_loss:.5f} | Patience: {patience_counter}/{hparams.early_stopping_patience}")
-                    save_name = f"{hparams.name_file_checkpoint}_last.pt"
-                    save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, list_idx, save_name, hparams)
-                    print(f"Saved checkpoint at epoch {epoch}, chunk {list_idx}: {save_name}")
-=======
                         print(f"==> EARLY STOPPING TRIGGERED!")
                         stop_signal = torch.tensor(1).to(device_id)
->>>>>>> develop
 
                 model.train()
                 # scheduler.step() # Nếu dùng scheduler
@@ -322,18 +297,6 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
                 should_stop_global = True
                 if rank == 0: print("Master requested stop.")
             
-<<<<<<< HEAD
-            del train_loader
-            if 'pbar' in locals(): del pbar # Xóa biến pbar nếu rank khác 0 có dùng
-            if 'train_loader_iter' in locals(): del train_loader_iter
-
-            gc.collect()
-            torch.cuda.empty_cache()
-            
-            # Barrier lần nữa để đảm bảo tất cả cùng thoát hoặc cùng tiếp tục
-            if hparams.ddp_run:
-                dist.barrier()
-=======
             # Clean up memory
             del train_loader
             if 'pbar' in locals(): del pbar
@@ -352,11 +315,7 @@ def train_worker_chunk_by_chunk(rank, world_size, hparams):
             # Lưu chunk_index = 0 để lần sau load lên biết là bắt đầu epoch mới
             save_checkpoint_chunk(raw_model, optimizer, best_val_loss, patience_counter, epoch, len(hparams.dataset_chunks) - 1,  True, epoch_save_name, hparams)
             print(f"[Epoch Checkpoint] Saved: {epoch_save_name}")
->>>>>>> develop
 
-            if should_stop_global:
-                break
-            
         start_chunk_index = 0
 
     if hparams.ddp_run:
